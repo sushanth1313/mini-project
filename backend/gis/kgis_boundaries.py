@@ -9,6 +9,8 @@ and likely planning authority without relying on nearby POIs or hardcoded locali
 """
 from __future__ import annotations
 
+from array import array
+import gc
 import json
 import logging
 import re
@@ -17,6 +19,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
+
+_KEEP_PROPS = frozenset({
+    "KGISTalukN", "KGISHobliN", "KGISVill_1", "KGISVill_2", "LGDGPCode",
+    "Administ_1", "Administ_2", "Administ_3", "KGISTownCo", "KGISWardNo",
+    "KGISWardNa", "SHAPE_Area",
+})
 
 _BOUNDARIES_DIR = Path(__file__).resolve().parent / "boundaries"
 _CACHE_LOCK = threading.Lock()
@@ -106,28 +114,71 @@ def _search_norm_key(text: str) -> str:
     return t
 
 
-def _compute_bbox(geom: dict) -> Tuple[float, float, float, float]:
-    xs: List[float] = []
-    ys: List[float] = []
+def _pack_ring(ring: List[List[float]]) -> array:
+    """Pack [[lon, lat], ...] into a flat float64 array('d') (~8x less RAM, bit-exact)."""
+    buf = array("d")
+    for pt in ring:
+        buf.append(float(pt[0]))
+        buf.append(float(pt[1]))
+    return buf
+
+
+def _compact_geom_and_bbox(geom: dict) -> Tuple[Optional[Tuple[str, Any]], Tuple[float, float, float, float]]:
     gtype = geom.get("type")
     coords = geom.get("coordinates") or []
+    minx = miny = float("inf")
+    maxx = maxy = float("-inf")
+
     if gtype == "Polygon":
+        rings: List[array] = []
         for ring in coords:
-            for pt in ring:
-                xs.append(pt[0])
-                ys.append(pt[1])
-    elif gtype == "MultiPolygon":
+            packed = _pack_ring(ring)
+            rings.append(packed)
+            for i in range(0, len(packed), 2):
+                x, y = packed[i], packed[i + 1]
+                if x < minx: minx = x
+                if x > maxx: maxx = x
+                if y < miny: miny = y
+                if y > maxy: maxy = y
+        if minx == float("inf"):
+            return None, (0.0, 0.0, 0.0, 0.0)
+        return ("P", tuple(rings)), (minx, miny, maxx, maxy)
+
+    if gtype == "MultiPolygon":
+        polys: List[Tuple[array, ...]] = []
         for poly in coords:
+            rings = []
             for ring in poly:
-                for pt in ring:
-                    xs.append(pt[0])
-                    ys.append(pt[1])
-    if not xs:
-        return (0.0, 0.0, 0.0, 0.0)
-    return (min(xs), min(ys), max(xs), max(ys))
+                packed = _pack_ring(ring)
+                rings.append(packed)
+                for i in range(0, len(packed), 2):
+                    x, y = packed[i], packed[i + 1]
+                    if x < minx: minx = x
+                    if x > maxx: maxx = x
+                    if y < miny: miny = y
+                    if y > maxy: maxy = y
+            polys.append(tuple(rings))
+        if minx == float("inf"):
+            return None, (0.0, 0.0, 0.0, 0.0)
+        return ("M", tuple(polys)), (minx, miny, maxx, maxy)
+
+    return None, (0.0, 0.0, 0.0, 0.0)
 
 
-def _point_in_ring(lon: float, lat: float, ring: List[List[float]]) -> bool:
+def _point_in_ring(lon: float, lat: float, ring: Any) -> bool:
+    if isinstance(ring, array):
+        n_dbl = len(ring)
+        if n_dbl < 6:
+            return False
+        inside = False
+        xj, yj = ring[n_dbl - 2], ring[n_dbl - 1]
+        for i in range(0, n_dbl, 2):
+            xi, yi = ring[i], ring[i + 1]
+            if ((yi > lat) != (yj > lat)) and (lon < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-12) + xi):
+                inside = not inside
+            xj, yj = xi, yi
+        return inside
+
     inside = False
     n = len(ring)
     if n < 3:
@@ -142,7 +193,23 @@ def _point_in_ring(lon: float, lat: float, ring: List[List[float]]) -> bool:
     return inside
 
 
-def _point_in_geom(lon: float, lat: float, geom: dict) -> bool:
+def _point_in_geom(lon: float, lat: float, geom: Any) -> bool:
+    if isinstance(geom, tuple):
+        kind, payload = geom
+        if kind == "P":
+            if not payload or not _point_in_ring(lon, lat, payload[0]):
+                return False
+            for hole in payload[1:]:
+                if _point_in_ring(lon, lat, hole):
+                    return False
+            return True
+        if kind == "M":
+            for poly in payload:
+                if poly and _point_in_ring(lon, lat, poly[0]):
+                    if not any(_point_in_ring(lon, lat, hole) for hole in poly[1:]):
+                        return True
+        return False
+
     gtype = geom.get("type")
     coords = geom.get("coordinates") or []
     if gtype == "Polygon":
@@ -172,12 +239,17 @@ def _load_layer(filename: str) -> List[Dict[str, Any]]:
         geom = feat.get("geometry")
         if not geom:
             continue
-        bb = _compute_bbox(geom)
+        compact_geom, bb = _compact_geom_and_bbox(geom)
+        if not compact_geom:
+            continue
+        raw_props = feat.get("properties") or {}
+        compact_props = {k: raw_props[k] for k in _KEEP_PROPS if k in raw_props}
         indexed.append({
-            "props": feat.get("properties") or {},
-            "geom": geom,
+            "props": compact_props,
+            "geom": compact_geom,
             "bbox": bb,
         })
+    del data
     return indexed
 
 
@@ -194,6 +266,7 @@ def _get_layers() -> Dict[str, List[Dict[str, Any]]]:
                 "towns": _load_layer("mysuru_towns.geojson"),
                 "wards": _load_layer("mysuru_wards.geojson"),
             }
+            gc.collect()
             log.info(
                 "Loaded KGIS Mysuru boundary layers: taluks=%d, hoblis=%d, villages=%d, towns=%d, wards=%d",
                 len(_LOADED_LAYERS["taluks"]),

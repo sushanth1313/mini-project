@@ -7,8 +7,10 @@ Changes in v3:
   - holdout metrics used for validation_mae/r2 (not GroupKFold)
   - reload_model() correctly resets both pipeline and metrics cache
 """
+import ctypes
 import gc
 import os
+import sys
 import json
 import logging
 import numpy as np
@@ -16,6 +18,16 @@ import pandas as pd
 import joblib
 
 log = logging.getLogger(__name__)
+
+
+def release_os_memory() -> None:
+    """Reclaim Python objects and ask glibc (Linux) to trim freed heap arenas."""
+    gc.collect()
+    if sys.platform.startswith("linux"):
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass
 
 MODEL_DIR    = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH   = os.path.join(MODEL_DIR, "model_pipeline.joblib")
@@ -35,7 +47,7 @@ def _load_pipeline():
                 "Run: python backend/ml/train.py --dataset <path_to_dataset>"
             )
         _pipeline = joblib.load(MODEL_PATH)
-        gc.collect()
+        release_os_memory()
         log.info("ML pipeline loaded.")
     return _pipeline
 
@@ -83,7 +95,7 @@ def _load_train_df():
                     df_tmp["dist_mysuru_center_km"] = _haversine_vec(lat, lon, 12.3052, 76.6552)
                 _train_df = derive_region_3class(df_tmp)
                 del df_tmp
-                gc.collect()
+                release_os_memory()
                 log.info(f"Training reference dataset loaded: {len(_train_df)} rows from {p}")
                 return _train_df
             except Exception as e:

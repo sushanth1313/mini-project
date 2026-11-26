@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Bounded in-memory tile cache: {(z, x, y): bytes}
 _TILE_CACHE = {}
-_TILE_CACHE_MAX = 150
+_TILE_CACHE_MAX = 32
 
 # Category marker colors (RGB) and short codes for clean legibility on OSM maps
 _CAT_STYLES = {

@@ -1,4 +1,5 @@
 """OCR and PDF/Image preprocessing service (PyMuPDF/pypdf/pdfplumber + OpenCV/Pillow + Tesseract)."""
+import importlib.util
 import re
 import shutil
 from pathlib import Path
@@ -8,41 +9,66 @@ import numpy as np
 import pytesseract
 from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
 
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError:
-    cv2 = None  # type: ignore[assignment]
-    CV2_AVAILABLE = False
-
 from modules.land_document_analyzer.backend.config.settings import Settings
 from modules.land_document_analyzer.backend.utils.security import get_safe_logger
 
 logger = get_safe_logger(__name__)
 
-try:
-    import fitz  # PyMuPDF
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+# Detect library availability without importing heavy native binaries (OpenCV/PyMuPDF/PDFium) at startup
+CV2_AVAILABLE = importlib.util.find_spec("cv2") is not None
+PYMUPDF_AVAILABLE = (importlib.util.find_spec("pymupdf") is not None) or (importlib.util.find_spec("fitz") is not None)
+PDFPLUMBER_AVAILABLE = importlib.util.find_spec("pdfplumber") is not None
+PYPDF_AVAILABLE = importlib.util.find_spec("pypdf") is not None
+PYPDFIUM_AVAILABLE = importlib.util.find_spec("pypdfium2") is not None
 
-try:
-    import pdfplumber
-    PDFPLUMBER_AVAILABLE = True
-except ImportError:
-    PDFPLUMBER_AVAILABLE = False
+cv2 = None
+fitz = None
+pdfplumber = None
+PdfReader = None
+pdfium = None
 
-try:
-    from pypdf import PdfReader
-    PYPDF_AVAILABLE = True
-except ImportError:
-    PYPDF_AVAILABLE = False
 
-try:
-    import pypdfium2 as pdfium
-    PYPDFIUM_AVAILABLE = True
-except ImportError:
-    PYPDFIUM_AVAILABLE = False
+def _get_cv2():
+    global cv2
+    if cv2 is None and CV2_AVAILABLE:
+        import cv2 as _cv2
+        cv2 = _cv2
+    return cv2
+
+
+def _get_fitz():
+    global fitz
+    if fitz is None and PYMUPDF_AVAILABLE:
+        try:
+            import pymupdf as _fitz
+        except ImportError:
+            import fitz as _fitz
+        fitz = _fitz
+    return fitz
+
+
+def _get_pdfplumber():
+    global pdfplumber
+    if pdfplumber is None and PDFPLUMBER_AVAILABLE:
+        import pdfplumber as _pdfplumber
+        pdfplumber = _pdfplumber
+    return pdfplumber
+
+
+def _get_pypdf_reader():
+    global PdfReader
+    if PdfReader is None and PYPDF_AVAILABLE:
+        from pypdf import PdfReader as _PdfReader
+        PdfReader = _PdfReader
+    return PdfReader
+
+
+def _get_pdfium():
+    global pdfium
+    if pdfium is None and PYPDFIUM_AVAILABLE:
+        import pypdfium2 as _pdfium
+        pdfium = _pdfium
+    return pdfium
 
 
 class OCRService:
@@ -144,9 +170,10 @@ class OCRService:
         engine_used = "pymupdf" if PYMUPDF_AVAILABLE else "pdfplumber_pypdf"
 
         if PYMUPDF_AVAILABLE:
+            fitz_mod = _get_fitz()
             doc = None
             try:
-                doc = fitz.open(str(path))
+                doc = fitz_mod.open(str(path))
                 if getattr(doc, "needs_pass", False):
                     return self._failed_result(
                         engine_used="pymupdf",
@@ -274,10 +301,12 @@ class OCRService:
     @staticmethod
     def _extract_digital_pdf_fallback(path: Path) -> List[str]:
         if PDFPLUMBER_AVAILABLE:
-            with pdfplumber.open(str(path)) as pdf:
+            plumber_mod = _get_pdfplumber()
+            with plumber_mod.open(str(path)) as pdf:
                 return [(p.extract_text() or "") for p in pdf.pages]
         if PYPDF_AVAILABLE:
-            reader = PdfReader(str(path))
+            reader_cls = _get_pypdf_reader()
+            reader = reader_cls(str(path))
             return [(p.extract_text() or "") for p in reader.pages]
         return [""]
 
@@ -285,7 +314,8 @@ class OCRService:
     def _render_pdf_pages(path: Path) -> List[Image.Image]:
         images: List[Image.Image] = []
         if PYPDFIUM_AVAILABLE:
-            pdf = pdfium.PdfDocument(str(path))
+            pdfium_mod = _get_pdfium()
+            pdf = pdfium_mod.PdfDocument(str(path))
             scale = Settings.OCR_DPI / 72.0
             for i in range(len(pdf)):
                 page = pdf[i]
@@ -338,21 +368,22 @@ class OCRService:
             return self._ocr_unavailable_page(page_number)
 
         try:
-            if CV2_AVAILABLE and cv2 is not None:
-                cv_img = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+            cv2_mod = _get_cv2()
+            if CV2_AVAILABLE and cv2_mod is not None:
+                cv_img = cv2_mod.cvtColor(np.array(pil_image), cv2_mod.COLOR_RGB2BGR)
                 rotation_deg = self._detect_orientation(cv_img)
                 if rotation_deg in (90, 180, 270):
                     cv_img = self._rotate_right_angle(cv_img, rotation_deg)
 
-                gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+                gray = cv2_mod.cvtColor(cv_img, cv2_mod.COLOR_BGR2GRAY)
                 h, w = gray.shape[:2]
                 if max(h, w) < 1200:
                     scale = 1400.0 / max(h, w)
-                    gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                    gray = cv2_mod.resize(gray, None, fx=scale, fy=scale, interpolation=cv2_mod.INTER_CUBIC)
 
-                denoised = cv2.fastNlMeansDenoising(gray, h=10)
-                thresh = cv2.adaptiveThreshold(
-                    denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 11
+                denoised = cv2_mod.fastNlMeansDenoising(gray, h=10)
+                thresh = cv2_mod.adaptiveThreshold(
+                    denoised, 255, cv2_mod.ADAPTIVE_THRESH_GAUSSIAN_C, cv2_mod.THRESH_BINARY, 31, 11
                 )
                 method_name = "opencv_tesseract_ocr"
             else:
@@ -434,12 +465,15 @@ class OCRService:
 
     @staticmethod
     def _rotate_right_angle(cv_img: np.ndarray, degrees: int) -> np.ndarray:
+        cv2_mod = _get_cv2()
+        if cv2_mod is None:
+            return cv_img
         if degrees == 90:
-            return cv2.rotate(cv_img, cv2.ROTATE_90_CLOCKWISE)
+            return cv2_mod.rotate(cv_img, cv2_mod.ROTATE_90_CLOCKWISE)
         if degrees == 180:
-            return cv2.rotate(cv_img, cv2.ROTATE_180)
+            return cv2_mod.rotate(cv_img, cv2_mod.ROTATE_180)
         if degrees == 270:
-            return cv2.rotate(cv_img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            return cv2_mod.rotate(cv_img, cv2_mod.ROTATE_90_COUNTERCLOCKWISE)
         return cv_img
 
     def _run_tesseract_with_conf(self, gray_img: np.ndarray) -> Tuple[str, float]:

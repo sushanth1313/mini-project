@@ -103,6 +103,7 @@ def explain_prediction(pipeline, input_df: pd.DataFrame, top_k: int = 6) -> dict
         pos = [f for f in impacts if f["direction"] == "increases_price"][:top_k]
         neg = [f for f in impacts if f["direction"] == "decreases_price"][:top_k]
 
+        del X_trans
         return {
             "base_price_per_sqft": round(base_price, 2),
             "predicted_price_per_sqft": round(pred_val, 2),

@@ -16,7 +16,7 @@ from models import (
     GISAnalysis, FacilityRecord, DatasetRecord
 )
 from ml.preprocess import prepare_single_input
-from ml.predict import predict_price_per_sqft, get_model_metrics
+from ml.predict import predict_price_per_sqft, get_model_metrics, release_os_memory
 from gis.service import (
     get_nearby_facilities, geocode_locality,
     reverse_geocode_coords, resolve_entered_vs_coordinates, search_locations,
@@ -218,7 +218,7 @@ def run_evaluation():
         db.session.rollback()
         raise
     finally:
-        gc.collect()
+        release_os_memory()
         _EVAL_LOCK.release()
 
 
