@@ -30,6 +30,7 @@ frontend/.vite/
 backend/uploads/
 backend/generated_reports/
 backend/storage/
+backend/backups/
 *.log
 
 # OS / Editor

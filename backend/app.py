@@ -107,8 +107,9 @@ def create_app(config_name: str = "development") -> Flask:
 
 
 def _ensure_schema_migrations():
-    """Non-destructive column additions so existing SQLite property records are preserved."""
-    from sqlalchemy import text
+    """Non-destructive column additions so existing SQLite/PostgreSQL property records are preserved."""
+    from sqlalchemy import inspect as sa_inspect, text
+    inspector = sa_inspect(db.engine)
     alters = [
         ("properties", "entered_locality", "VARCHAR(200)"),
         ("properties", "entered_taluk", "VARCHAR(100)"),
@@ -119,7 +120,7 @@ def _ensure_schema_migrations():
     ]
     for table, col, col_type in alters:
         try:
-            cols = [r[1] for r in db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()]
+            cols = [c["name"] for c in inspector.get_columns(table)]
             if col not in cols:
                 db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
                 db.session.commit()
