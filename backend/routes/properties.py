@@ -3,6 +3,7 @@ Properties routes: CRUD for properties and dataset records.
 """
 import json
 from flask import Blueprint, request, jsonify
+from sqlalchemy.orm import selectinload
 from models import db, Property, DatasetRecord, VerificationItem
 from documents.extractor import DEFAULT_VERIFICATION_ITEMS
 
@@ -30,7 +31,7 @@ def _resolve_request_user():
 def list_properties():
     """List customer-owned properties (or guest-session unowned properties when anonymous; all for admins)."""
     is_customer, user_id, is_admin = _resolve_request_user()
-    query = Property.query
+    query = Property.query.options(selectinload(Property.evaluations))
     if is_customer and user_id is not None:
         query = query.filter(Property.user_id == user_id)
     elif not is_admin:
