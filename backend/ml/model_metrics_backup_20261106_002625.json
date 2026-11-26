@@ -1,0 +1,112 @@
+{
+  "best_model": "HistGradientBoostingRegressor",
+  "training_records": 64,
+  "total_records_in_file": 76,
+  "feature_count": 25,
+  "features_used": [
+    "land_area_sqft",
+    "road_width_ft",
+    "nearest_school_km",
+    "nearest_hospital_km",
+    "nearest_market_km",
+    "nearest_supermarket_km",
+    "nearest_bus_stop_km",
+    "nearest_railway_station_km",
+    "nearest_bank_km",
+    "distance_to_main_road_km",
+    "distance_to_highway_km",
+    "distance_to_nearest_waterbody_km",
+    "latitude",
+    "longitude",
+    "taluk",
+    "village_or_locality",
+    "region_type",
+    "land_type",
+    "listing_type",
+    "road_quality",
+    "water_source_type",
+    "street_light_available",
+    "public_transport_available",
+    "electricity_available",
+    "locality_water_supply"
+  ],
+  "dataset_path": "c:\\mini project\\Mysuru_Land_Evaluation_Final (7).xlsx",
+  "dataset_version": "v1_76records",
+  "target": "price_per_sqft",
+  "trained_at": "2026-11-05T18:47:24.990777",
+  "backup_timestamp": "20261105_184712",
+  "train_test_split": {
+    "train_size": 64,
+    "test_size": 12
+  },
+  "cv_results": {
+    "LinearRegression": {
+      "mae": 2671.1597,
+      "rmse": 3375.0136,
+      "r2": -0.520138,
+      "mae_std": 594.0999,
+      "rmse_std": 572.8389,
+      "r2_std": 1.101709,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "RandomForestRegressor": {
+      "mae": 2174.9944,
+      "rmse": 2828.8731,
+      "r2": 0.163886,
+      "mae_std": 426.668,
+      "rmse_std": 666.63,
+      "r2_std": 0.380741,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "HistGradientBoostingRegressor": {
+      "mae": 2034.1558,
+      "rmse": 2802.2895,
+      "r2": -0.093235,
+      "mae_std": 610.8442,
+      "rmse_std": 883.0661,
+      "r2_std": 1.030575,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    }
+  },
+  "validation_mae": 2034.1558,
+  "validation_rmse": 2802.2895,
+  "validation_r2": -0.093235,
+  "n_folds": 5,
+  "holdout_metrics": {
+    "mae": 2212.1404,
+    "rmse": 3243.4981,
+    "r2": -0.102634
+  },
+  "train_metrics": {
+    "mae": 137.0118,
+    "rmse": 201.1327,
+    "r2": 0.997327
+  },
+  "train_mae": 137.0118,
+  "train_r2": 0.997327,
+  "feature_importances": null,
+  "shap_explainability": null,
+  "data_quality_report": {
+    "raw_records": 76,
+    "clean_records": 76,
+    "dropped_records": 0,
+    "genuine_records_est": 0,
+    "synthetic_records_est": 76,
+    "outliers_in_target_3iqr": 0,
+    "taluk_coverage": {
+      "Mysuru": 76
+    }
+  },
+  "price_distribution": {
+    "mean": 5566.665,
+    "median": 4958.3333,
+    "std": 3802.7502,
+    "min": 316.6667,
+    "max": 17051.2821,
+    "p25": 2500.0,
+    "p75": 7187.5
+  }
+}

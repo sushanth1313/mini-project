@@ -1,0 +1,106 @@
+/* ==========================================================================
+   SLV-GIS Mysuru — Clean Green & White Design System Tokens (v3.0)
+   ========================================================================== */
+
+:root {
+  --font-display: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 0.9375rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Clean Light-Grey & Crisp White Surfaces */
+  --bg-canvas: #F6F8F6;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F0F4F1;
+  --bg-sage-tint: #ECF5EE;
+
+  /* Dark Charcoal Text Hierarchy */
+  --text-primary: #141C17;
+  --text-secondary: #4A5750;
+  --text-tertiary: #6E7B73;
+  --text-inverse: #FFFFFF;
+
+  /* Forest-Green Primary Identity */
+  --brand-900: #0E3B20;
+  --brand-800: #144D29;
+  --brand-700: #1B6336;
+  --brand-600: #247B44;
+  --brand-100: #E6F4EA;
+  --brand-50: #F2F9F4;
+
+  /* Thin Subtle Borders */
+  --border-subtle: #E3E8E4;
+  --border-default: #D2DBD4;
+  --border-strong: #B4C0B7;
+  --border-focus: #1B6336;
+
+  /* Semantic Statuses */
+  --status-success-bg: #E7F5EC;
+  --status-success-text: #14532D;
+  --status-success-border: #BCE0C8;
+
+  --status-warning-bg: #FEF6E6;
+  --status-warning-text: #85520E;
+  --status-warning-border: #EDD49F;
+
+  --status-info-bg: #ECF4FC;
+  --status-info-text: #1B4D7A;
+  --status-info-border: #C3DDF5;
+
+  --status-danger-bg: #FDEEEC;
+  --status-danger-text: #8C2D23;
+  --status-danger-border: #ECC2BC;
+
+  --status-neutral-bg: #F1F4F2;
+  --status-neutral-text: #4A5750;
+  --status-neutral-border: #D7DFE0;
+
+  /* Consistent Spacing, Radii & Minimal Shadows */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius-xs: 5px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  --shadow-xs: 0 1px 2px rgba(16, 36, 24, 0.04);
+  --shadow-sm: 0 2px 6px rgba(16, 36, 24, 0.05);
+  --shadow-md: 0 8px 20px rgba(16, 36, 24, 0.07);
+
+  --sidebar-width: 246px;
+  --topbar-height: 62px;
+  --container-max: 1240px;
+
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 140ms;
+  --duration-base: 200ms;
+
+  --z-sticky: 30;
+  --z-sidebar: 40;
+  --z-dropdown: 50;
+  --z-modal: 70;
+  --z-toast: 90;
+}

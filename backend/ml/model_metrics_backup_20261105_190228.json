@@ -1,0 +1,118 @@
+{
+  "best_model": "HistGradientBoostingRegressor",
+  "training_records": 892,
+  "total_records_in_file": 1050,
+  "feature_count": 25,
+  "features_used": [
+    "land_area_sqft",
+    "road_width_ft",
+    "nearest_school_km",
+    "nearest_hospital_km",
+    "nearest_market_km",
+    "nearest_supermarket_km",
+    "nearest_bus_stop_km",
+    "nearest_railway_station_km",
+    "nearest_bank_km",
+    "distance_to_main_road_km",
+    "distance_to_highway_km",
+    "distance_to_nearest_waterbody_km",
+    "latitude",
+    "longitude",
+    "taluk",
+    "village_or_locality",
+    "region_type",
+    "land_type",
+    "listing_type",
+    "road_quality",
+    "water_source_type",
+    "street_light_available",
+    "public_transport_available",
+    "electricity_available",
+    "locality_water_supply"
+  ],
+  "dataset_path": "c:\\mini project\\Mysuru_Land_Evaluation_1000_Master.xlsx",
+  "dataset_version": "v1_76records",
+  "target": "price_per_sqft",
+  "trained_at": "2026-11-05T18:57:12.080183",
+  "backup_timestamp": "20261105_185651",
+  "train_test_split": {
+    "train_size": 892,
+    "test_size": 158
+  },
+  "cv_results": {
+    "LinearRegression": {
+      "mae": 745.1091,
+      "rmse": 1442.9518,
+      "r2": 0.670201,
+      "mae_std": 137.2027,
+      "rmse_std": 353.0262,
+      "r2_std": 0.061405,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "RandomForestRegressor": {
+      "mae": 634.0061,
+      "rmse": 1320.189,
+      "r2": 0.724865,
+      "mae_std": 113.1077,
+      "rmse_std": 356.4932,
+      "r2_std": 0.064574,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "HistGradientBoostingRegressor": {
+      "mae": 622.5911,
+      "rmse": 1386.8928,
+      "r2": 0.685554,
+      "mae_std": 80.9468,
+      "rmse_std": 199.5565,
+      "r2_std": 0.03279,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    }
+  },
+  "validation_mae": 622.5911,
+  "validation_rmse": 1386.8928,
+  "validation_r2": 0.685554,
+  "n_folds": 5,
+  "holdout_metrics": {
+    "mae": 579.2565,
+    "rmse": 1306.3458,
+    "r2": 0.73987
+  },
+  "train_metrics": {
+    "mae": 132.8354,
+    "rmse": 237.4749,
+    "r2": 0.991157
+  },
+  "train_mae": 132.8354,
+  "train_r2": 0.991157,
+  "feature_importances": null,
+  "shap_explainability": null,
+  "data_quality_report": {
+    "raw_records": 1050,
+    "clean_records": 1050,
+    "dropped_records": 0,
+    "genuine_records_est": 0,
+    "synthetic_records_est": 318,
+    "outliers_in_target_3iqr": 29,
+    "taluk_coverage": {
+      "Mysuru": 170,
+      "Nanjangud": 150,
+      "Hunsur": 150,
+      "HD Kote": 145,
+      "T. Narasipura": 145,
+      "Periyapatna": 145,
+      "K. R. Nagar": 145
+    }
+  },
+  "price_distribution": {
+    "mean": 1934.5188,
+    "median": 1390.0,
+    "std": 2532.0267,
+    "min": 35.8035,
+    "max": 17051.2821,
+    "p25": 102.8283,
+    "p75": 2387.5
+  }
+}

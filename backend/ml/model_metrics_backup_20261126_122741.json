@@ -1,0 +1,340 @@
+{
+  "best_model": "ExtraTreesRegressor",
+  "training_records": 892,
+  "total_records_in_file": 1050,
+  "feature_count": 47,
+  "features_used": [
+    "land_area_sqft",
+    "log_land_area",
+    "road_width_ft",
+    "nearest_school_km",
+    "nearest_hospital_km",
+    "nearest_market_km",
+    "nearest_supermarket_km",
+    "nearest_pharmacy_km",
+    "nearest_police_station_km",
+    "nearest_bank_km",
+    "nearest_bus_stop_km",
+    "nearest_railway_station_km",
+    "distance_to_main_road_km",
+    "distance_to_highway_km",
+    "distance_to_nearest_waterbody_km",
+    "school_count_3km",
+    "hospital_count_3km",
+    "market_count_3km",
+    "supermarket_count_3km",
+    "bank_count_3km",
+    "bus_stop_count_3km",
+    "pharmacy_count_3km",
+    "police_station_count_3km",
+    "railway_station_count_3km",
+    "waterbody_count_3km",
+    "latitude",
+    "longitude",
+    "dist_mysuru_center_km",
+    "dlat_mysuru",
+    "dlon_mysuru",
+    "dist_taluk_hq_km",
+    "amenity_count_3km_total",
+    "avg_essential_dist_km",
+    "min_essential_dist_km",
+    "infra_composite",
+    "urban_layout_indicator",
+    "taluk",
+    "village_or_locality",
+    "region_type",
+    "land_type",
+    "listing_type",
+    "road_quality",
+    "water_source_type",
+    "street_light_available",
+    "public_transport_available",
+    "electricity_available",
+    "locality_water_supply"
+  ],
+  "dataset_path": "c:\\mini project\\Mysuru_Land_Evaluation_1000_Master.xlsx",
+  "dataset_version": "v2_1050records",
+  "target": "price_per_sqft",
+  "trained_at": "2026-11-25T18:38:17.733924",
+  "backup_timestamp": "20261125_183449",
+  "train_test_split": {
+    "train_size": 892,
+    "test_size": 158
+  },
+  "cv_results": {
+    "LinearRegression": {
+      "mae": 738.3258,
+      "rmse": 1399.5793,
+      "r2": 0.689843,
+      "mae_std": 115.0922,
+      "rmse_std": 337.0706,
+      "r2_std": 0.053057,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "RandomForestRegressor": {
+      "mae": 556.7474,
+      "rmse": 1246.8702,
+      "r2": 0.751699,
+      "mae_std": 119.076,
+      "rmse_std": 304.4132,
+      "r2_std": 0.059839,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "ExtraTreesRegressor": {
+      "mae": 529.8984,
+      "rmse": 1181.4384,
+      "r2": 0.779054,
+      "mae_std": 121.4862,
+      "rmse_std": 338.0177,
+      "r2_std": 0.062504,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "GradientBoostingRegressor": {
+      "mae": 575.1219,
+      "rmse": 1304.2106,
+      "r2": 0.727073,
+      "mae_std": 111.9381,
+      "rmse_std": 288.4266,
+      "r2_std": 0.05772,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "HistGradientBoostingRegressor": {
+      "mae": 571.3726,
+      "rmse": 1321.3156,
+      "r2": 0.717311,
+      "mae_std": 95.9687,
+      "rmse_std": 249.4623,
+      "r2_std": 0.053258,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    }
+  },
+  "kfold_results": {
+    "LinearRegression": {
+      "mae": 422.9443,
+      "rmse": 970.6702,
+      "r2": 0.846966,
+      "mae_std": 44.3986,
+      "rmse_std": 238.8672,
+      "r2_std": 0.054913,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    },
+    "RandomForestRegressor": {
+      "mae": 477.3644,
+      "rmse": 1119.969,
+      "r2": 0.798338,
+      "mae_std": 41.6423,
+      "rmse_std": 211.2507,
+      "r2_std": 0.051919,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    },
+    "ExtraTreesRegressor": {
+      "mae": 399.4848,
+      "rmse": 930.6752,
+      "r2": 0.860313,
+      "mae_std": 36.2788,
+      "rmse_std": 229.9607,
+      "r2_std": 0.048769,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    },
+    "GradientBoostingRegressor": {
+      "mae": 468.3885,
+      "rmse": 1114.0069,
+      "r2": 0.799852,
+      "mae_std": 52.8919,
+      "rmse_std": 234.6613,
+      "r2_std": 0.058696,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    },
+    "HistGradientBoostingRegressor": {
+      "mae": 525.7923,
+      "rmse": 1258.0394,
+      "r2": 0.744419,
+      "mae_std": 51.5844,
+      "rmse_std": 192.5558,
+      "r2_std": 0.059554,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    }
+  },
+  "validation_mae": 529.8984,
+  "validation_rmse": 1181.4384,
+  "validation_r2": 0.779054,
+  "kfold_mae": 399.4848,
+  "kfold_rmse": 930.6752,
+  "kfold_r2": 0.860313,
+  "n_folds": 5,
+  "holdout_metrics": {
+    "mae": 385.8033,
+    "rmse": 988.4657,
+    "r2": 0.851065
+  },
+  "train_metrics": {
+    "mae": 0.2018,
+    "rmse": 2.6097,
+    "r2": 0.999999
+  },
+  "train_mae": 0.2018,
+  "train_r2": 0.999999,
+  "feature_importances": [
+    [
+      "region_type_Urban",
+      0.27260375363407985
+    ],
+    [
+      "urban_layout_indicator",
+      0.21802433111091213
+    ],
+    [
+      "taluk_Mysuru",
+      0.0777299002725794
+    ],
+    [
+      "land_type_Agricultural/Farm",
+      0.06920218586070175
+    ],
+    [
+      "region_type_Rural",
+      0.046370284645599634
+    ],
+    [
+      "region_type_Peri-urban",
+      0.03387857049061693
+    ],
+    [
+      "village_or_locality_Gokulam 3rd Stage",
+      0.022299988473085442
+    ],
+    [
+      "village_or_locality_Jayalakshmipuram",
+      0.01721248654232848
+    ],
+    [
+      "land_type_Residential",
+      0.016130937122515995
+    ],
+    [
+      "village_or_locality_Hebbal 1st Stage",
+      0.015408568299028995
+    ],
+    [
+      "village_or_locality_Subramanya Nagar, Hebbal 1st Stage",
+      0.01491178529786209
+    ],
+    [
+      "village_or_locality_Saraswathipuram",
+      0.012609795528331672
+    ],
+    [
+      "village_or_locality_Aravinda Nagar, Vivekananda Nagar",
+      0.010279130065500047
+    ],
+    [
+      "avg_essential_dist_km",
+      0.00981786716800136
+    ],
+    [
+      "amenity_count_3km_total",
+      0.007497044364051444
+    ]
+  ],
+  "shap_explainability": {
+    "shap_top_features": [
+      [
+        "region_type_Urban",
+        520.5734507044151
+      ],
+      [
+        "land_type_Agricultural/Farm",
+        495.95408053601653
+      ],
+      [
+        "urban_layout_indicator",
+        414.63836243167844
+      ],
+      [
+        "region_type_Rural",
+        238.83621413927114
+      ],
+      [
+        "taluk_Mysuru",
+        192.89102146098477
+      ],
+      [
+        "region_type_Peri-urban",
+        125.81526091012023
+      ],
+      [
+        "land_type_Residential",
+        122.93169497194665
+      ],
+      [
+        "land_type_Commercial",
+        71.17137719724485
+      ],
+      [
+        "village_or_locality_Gokulam 3rd Stage",
+        60.49981381522456
+      ],
+      [
+        "village_or_locality_Saraswathipuram",
+        56.688320019898605
+      ],
+      [
+        "avg_essential_dist_km",
+        34.22992977447691
+      ],
+      [
+        "taluk_Nanjangud",
+        34.093149442404275
+      ],
+      [
+        "amenity_count_3km_total",
+        31.508878009379206
+      ],
+      [
+        "log_land_area",
+        26.97273044697482
+      ],
+      [
+        "village_or_locality_Jayalakshmipuram",
+        21.978842416249073
+      ]
+    ],
+    "shap_n_samples": 100
+  },
+  "data_quality_report": {
+    "raw_records": 1050,
+    "clean_records": 1050,
+    "dropped_records": 0,
+    "genuine_records_est": 0,
+    "synthetic_records_est": 318,
+    "outliers_in_target_3iqr": 29,
+    "taluk_coverage": {
+      "Mysuru": 170,
+      "Nanjangud": 150,
+      "Hunsur": 150,
+      "HD Kote": 145,
+      "T. Narasipura": 145,
+      "Periyapatna": 145,
+      "K. R. Nagar": 145
+    }
+  },
+  "price_distribution": {
+    "mean": 1934.5188,
+    "median": 1390.0,
+    "std": 2532.0267,
+    "min": 35.8035,
+    "max": 17051.2821,
+    "p25": 102.8283,
+    "p75": 2387.5
+  }
+}

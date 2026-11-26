@@ -1,0 +1,340 @@
+{
+  "best_model": "ExtraTreesRegressor",
+  "training_records": 892,
+  "total_records_in_file": 1050,
+  "feature_count": 47,
+  "features_used": [
+    "land_area_sqft",
+    "log_land_area",
+    "road_width_ft",
+    "nearest_school_km",
+    "nearest_hospital_km",
+    "nearest_market_km",
+    "nearest_supermarket_km",
+    "nearest_pharmacy_km",
+    "nearest_police_station_km",
+    "nearest_bank_km",
+    "nearest_bus_stop_km",
+    "nearest_railway_station_km",
+    "distance_to_main_road_km",
+    "distance_to_highway_km",
+    "distance_to_nearest_waterbody_km",
+    "school_count_3km",
+    "hospital_count_3km",
+    "market_count_3km",
+    "supermarket_count_3km",
+    "bank_count_3km",
+    "bus_stop_count_3km",
+    "pharmacy_count_3km",
+    "police_station_count_3km",
+    "railway_station_count_3km",
+    "waterbody_count_3km",
+    "latitude",
+    "longitude",
+    "dist_mysuru_center_km",
+    "dlat_mysuru",
+    "dlon_mysuru",
+    "dist_taluk_hq_km",
+    "amenity_count_3km_total",
+    "avg_essential_dist_km",
+    "min_essential_dist_km",
+    "infra_composite",
+    "urban_layout_indicator",
+    "taluk",
+    "village_or_locality",
+    "region_type",
+    "land_type",
+    "listing_type",
+    "road_quality",
+    "water_source_type",
+    "street_light_available",
+    "public_transport_available",
+    "electricity_available",
+    "locality_water_supply"
+  ],
+  "dataset_path": "c:\\mini project\\Mysuru_Land_Evaluation_1000_Master.xlsx",
+  "dataset_version": "v2_1050records",
+  "target": "price_per_sqft",
+  "trained_at": "2026-11-26T12:32:50.130522",
+  "backup_timestamp": "20261126_123041",
+  "train_test_split": {
+    "train_size": 892,
+    "test_size": 158
+  },
+  "cv_results": {
+    "LinearRegression": {
+      "mae": 712.8188,
+      "rmse": 1396.0127,
+      "r2": 0.691457,
+      "mae_std": 113.5152,
+      "rmse_std": 337.4604,
+      "r2_std": 0.053356,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "RandomForestRegressor": {
+      "mae": 556.7474,
+      "rmse": 1246.8702,
+      "r2": 0.751699,
+      "mae_std": 119.076,
+      "rmse_std": 304.4132,
+      "r2_std": 0.059839,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "ExtraTreesRegressor": {
+      "mae": 528.2988,
+      "rmse": 1179.0133,
+      "r2": 0.779876,
+      "mae_std": 120.3533,
+      "rmse_std": 338.0697,
+      "r2_std": 0.06156,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "GradientBoostingRegressor": {
+      "mae": 574.7495,
+      "rmse": 1304.1582,
+      "r2": 0.727092,
+      "mae_std": 112.1417,
+      "rmse_std": 288.4009,
+      "r2_std": 0.057725,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    },
+    "HistGradientBoostingRegressor": {
+      "mae": 571.3377,
+      "rmse": 1321.3132,
+      "r2": 0.717312,
+      "mae_std": 95.9794,
+      "rmse_std": 249.4605,
+      "r2_std": 0.053258,
+      "n_folds": 5,
+      "cv_type": "GroupKFold (locality-grouped)"
+    }
+  },
+  "kfold_results": {
+    "LinearRegression": {
+      "mae": 420.5088,
+      "rmse": 970.3757,
+      "r2": 0.847056,
+      "mae_std": 43.2925,
+      "rmse_std": 238.8113,
+      "r2_std": 0.054888,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    },
+    "RandomForestRegressor": {
+      "mae": 477.3644,
+      "rmse": 1119.969,
+      "r2": 0.798338,
+      "mae_std": 41.6423,
+      "rmse_std": 211.2507,
+      "r2_std": 0.051919,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    },
+    "ExtraTreesRegressor": {
+      "mae": 401.93,
+      "rmse": 945.6448,
+      "r2": 0.856151,
+      "mae_std": 34.254,
+      "rmse_std": 224.3608,
+      "r2_std": 0.047331,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    },
+    "GradientBoostingRegressor": {
+      "mae": 468.108,
+      "rmse": 1113.984,
+      "r2": 0.79986,
+      "mae_std": 52.5819,
+      "rmse_std": 234.6261,
+      "r2_std": 0.058687,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    },
+    "HistGradientBoostingRegressor": {
+      "mae": 525.0667,
+      "rmse": 1257.8115,
+      "r2": 0.744531,
+      "mae_std": 51.4712,
+      "rmse_std": 192.6719,
+      "r2_std": 0.059491,
+      "n_folds": 5,
+      "cv_type": "KFold (random, shuffled)"
+    }
+  },
+  "validation_mae": 528.2988,
+  "validation_rmse": 1179.0133,
+  "validation_r2": 0.779876,
+  "kfold_mae": 401.93,
+  "kfold_rmse": 945.6448,
+  "kfold_r2": 0.856151,
+  "n_folds": 5,
+  "holdout_metrics": {
+    "mae": 396.0697,
+    "rmse": 1008.1449,
+    "r2": 0.845076
+  },
+  "train_metrics": {
+    "mae": 0.2018,
+    "rmse": 2.6098,
+    "r2": 0.999999
+  },
+  "train_mae": 0.2018,
+  "train_r2": 0.999999,
+  "feature_importances": [
+    [
+      "land_type_Agricultural/Farm",
+      0.5236652781868847
+    ],
+    [
+      "region_type_Rural",
+      0.16902316154853736
+    ],
+    [
+      "log_land_area",
+      0.047584594606233356
+    ],
+    [
+      "land_type_Residential",
+      0.045510875298944445
+    ],
+    [
+      "hospital_count_3km",
+      0.018296869512164176
+    ],
+    [
+      "region_type_Urban",
+      0.017840874020834122
+    ],
+    [
+      "land_area_sqft",
+      0.01735722744793709
+    ],
+    [
+      "urban_layout_indicator",
+      0.015811623902994815
+    ],
+    [
+      "amenity_count_3km_total",
+      0.015451831664784562
+    ],
+    [
+      "water_source_type_Piped/Borewell",
+      0.013845742912621101
+    ],
+    [
+      "avg_essential_dist_km",
+      0.010189392707231149
+    ],
+    [
+      "supermarket_count_3km",
+      0.009605934220293015
+    ],
+    [
+      "taluk_Mysuru",
+      0.009151728341170865
+    ],
+    [
+      "bank_count_3km",
+      0.007525112111258439
+    ],
+    [
+      "nearest_supermarket_km",
+      0.007415734206368275
+    ]
+  ],
+  "shap_explainability": {
+    "shap_top_features": [
+      [
+        "land_type_Agricultural/Farm",
+        0.9647611853023274
+      ],
+      [
+        "region_type_Rural",
+        0.32129640168674667
+      ],
+      [
+        "region_type_Urban",
+        0.07629170866904626
+      ],
+      [
+        "urban_layout_indicator",
+        0.06870411983791701
+      ],
+      [
+        "log_land_area",
+        0.06566667002771033
+      ],
+      [
+        "taluk_Mysuru",
+        0.05977981271769467
+      ],
+      [
+        "land_type_Residential",
+        0.050682127100214906
+      ],
+      [
+        "land_type_Commercial",
+        0.03306554005046826
+      ],
+      [
+        "hospital_count_3km",
+        0.03217490737333622
+      ],
+      [
+        "amenity_count_3km_total",
+        0.029460809975231643
+      ],
+      [
+        "land_area_sqft",
+        0.02419934843875771
+      ],
+      [
+        "water_source_type_Piped/Borewell",
+        0.02285611369569673
+      ],
+      [
+        "taluk_Nanjangud",
+        0.021566197123053986
+      ],
+      [
+        "avg_essential_dist_km",
+        0.021196118914386042
+      ],
+      [
+        "region_type_Peri-urban",
+        0.020151838963257215
+      ]
+    ],
+    "shap_n_samples": 100
+  },
+  "data_quality_report": {
+    "raw_records": 1050,
+    "clean_records": 1050,
+    "dropped_records": 0,
+    "genuine_records_est": 0,
+    "synthetic_records_est": 318,
+    "outliers_in_target_3iqr": 29,
+    "taluk_coverage": {
+      "Mysuru": 170,
+      "Nanjangud": 150,
+      "Hunsur": 150,
+      "HD Kote": 145,
+      "T. Narasipura": 145,
+      "Periyapatna": 145,
+      "K. R. Nagar": 145
+    }
+  },
+  "price_distribution": {
+    "mean": 1934.5188,
+    "median": 1390.0,
+    "std": 2532.0267,
+    "min": 35.8035,
+    "max": 17051.2821,
+    "p25": 102.8283,
+    "p75": 2387.5
+  }
+}

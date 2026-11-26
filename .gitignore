@@ -1,0 +1,62 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+
+# Runtime Uploads, Generated Reports & Ephemeral Storage
+backend/uploads/
+backend/generated_reports/
+backend/storage/
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local scratch / verification / legacy root artifacts
+*.pdf
+!backend/**/sample*.pdf
+payload.json
+download_html.py
+extract_threeui.py
+inspect_dataset.py
+inspect_new_dataset.py
+ml_explained.py
+project_summary.md
+backend/verify_*.py
+backend/test_*.py
+backend/probe_*.py
+backend/check_*.py
+backend/audit_*.py
+backend/inspect_*.py
+backend/retrain_*.py
+backend/fix_*.py
+backend/debug_*.py
+backend/*.txt
+!backend/requirements.txt
+!backend/runtime.txt

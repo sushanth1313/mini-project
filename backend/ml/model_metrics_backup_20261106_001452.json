@@ -1,0 +1,135 @@
+{
+  "best_model": "RandomForestRegressor",
+  "training_records": 76,
+  "feature_count": 25,
+  "features_used": [
+    "land_area_sqft",
+    "road_width_ft",
+    "nearest_school_km",
+    "nearest_hospital_km",
+    "nearest_market_km",
+    "nearest_supermarket_km",
+    "nearest_bus_stop_km",
+    "nearest_railway_station_km",
+    "nearest_bank_km",
+    "distance_to_main_road_km",
+    "distance_to_highway_km",
+    "distance_to_nearest_waterbody_km",
+    "latitude",
+    "longitude",
+    "taluk",
+    "village_or_locality",
+    "region_type",
+    "land_type",
+    "listing_type",
+    "road_quality",
+    "water_source_type",
+    "street_light_available",
+    "public_transport_available",
+    "electricity_available",
+    "locality_water_supply"
+  ],
+  "cv_results": {
+    "LinearRegression": {
+      "mae": 2103.918904558538,
+      "rmse": 2952.749797140438,
+      "r2": 0.21683955573369942,
+      "mae_std": 610.5359850198695,
+      "r2_std": 0.498705718930388
+    },
+    "RandomForestRegressor": {
+      "mae": 2046.8650731879795,
+      "rmse": 2931.1748490179934,
+      "r2": 0.25277870627556737,
+      "mae_std": 281.1477870206904,
+      "r2_std": 0.37655965904940886
+    },
+    "HistGradientBoostingRegressor": {
+      "mae": 2091.5395418589374,
+      "rmse": 2860.6220669823165,
+      "r2": 0.3471388978076884,
+      "mae_std": 223.30679408822118,
+      "r2_std": 0.15243676694751457
+    }
+  },
+  "validation_mae": 2046.8650731879795,
+  "validation_rmse": 2931.1748490179934,
+  "validation_r2": 0.25277870627556737,
+  "train_mae": 871.5165684912637,
+  "train_r2": 0.8861169848126091,
+  "feature_importances": [
+    [
+      "land_area_sqft",
+      0.2610091739093352
+    ],
+    [
+      "nearest_school_km",
+      0.20272495157605636
+    ],
+    [
+      "nearest_hospital_km",
+      0.1494740418546114
+    ],
+    [
+      "nearest_market_km",
+      0.075123841543512
+    ],
+    [
+      "nearest_bus_stop_km",
+      0.06948657570930526
+    ],
+    [
+      "latitude",
+      0.0460060993004349
+    ],
+    [
+      "nearest_bank_km",
+      0.03964252329941168
+    ],
+    [
+      "nearest_supermarket_km",
+      0.03213507963555367
+    ],
+    [
+      "nearest_railway_station_km",
+      0.02543305962183133
+    ],
+    [
+      "distance_to_main_road_km",
+      0.018762044125540438
+    ],
+    [
+      "distance_to_nearest_waterbody_km",
+      0.018137291028645596
+    ],
+    [
+      "public_transport_available",
+      0.017395962353975853
+    ],
+    [
+      "distance_to_highway_km",
+      0.016564177849956962
+    ],
+    [
+      "longitude",
+      0.014748316281951869
+    ],
+    [
+      "road_width_ft",
+      0.006814359962968965
+    ]
+  ],
+  "trained_at": "2026-10-08T15:53:31.381940",
+  "dataset_path": "../Mysuru_Land_Evaluation_Final (7).xlsx",
+  "target": "price_per_sqft",
+  "n_folds": 5,
+  "price_distribution": {
+    "mean": 5566.66504086581,
+    "median": 4958.333333333334,
+    "std": 3802.750242242615,
+    "min": 316.6666666666667,
+    "max": 17051.28205128205,
+    "p25": 2500.0,
+    "p75": 7187.5
+  }
+}
