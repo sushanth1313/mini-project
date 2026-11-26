@@ -29,6 +29,12 @@ BACKUP_ROOT = BACKEND_DIR / "backups"
 
 sys.path.insert(0, str(BACKEND_DIR))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BACKEND_DIR / ".env")
+except Exception:
+    pass
+
 MONGO_COLLECTIONS = {
     "analyses": ("analyses.json", "analysis_id"),
     "documents": ("documents.json", "document_id"),
