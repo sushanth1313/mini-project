@@ -24,8 +24,16 @@ services:
       - key: ALLOWED_ORIGINS
         sync: false
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: slv-gis-db
+          property: connectionString
       - key: OVERPASS_URL
         value: https://overpass-api.de/api/interpreter
       - key: OVERPASS_TIMEOUT
         value: "45"
+
+databases:
+  - name: slv-gis-db
+    plan: free
+    databaseName: smart_land_eval
+    user: slv_gis_user
