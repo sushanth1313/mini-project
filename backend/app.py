@@ -5,8 +5,9 @@ Entry point: python app.py
 import os
 import sys
 import logging
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 from config import config
 from models import db
 
@@ -15,6 +16,22 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 log = logging.getLogger(__name__)
+
+
+def _collect_allowed_origins(app: Flask) -> list[str]:
+    """Build normalized deduplicated CORS allowlist (never blind wildcard)."""
+    raw_values = [
+        app.config.get("CORS_ORIGINS", ""),
+        os.getenv("ALLOWED_ORIGINS", ""),
+        "https://mini-project-mu-gray.vercel.app",
+    ]
+    seen: list[str] = []
+    for raw in raw_values:
+        for item in str(raw or "").split(","):
+            norm = item.strip().rstrip("/")
+            if norm and norm != "*" and norm not in seen:
+                seen.append(norm)
+    return seen
 
 
 def create_app(config_name: str = "development") -> Flask:
@@ -28,18 +45,32 @@ def create_app(config_name: str = "development") -> Flask:
     # Allow multi-PDF due-diligence packets cleanly up to 30 MB while individual legacy uploads validate 10 MB
     app.config["MAX_CONTENT_LENGTH"] = max(int(app.config.get("MAX_CONTENT_LENGTH") or 0), 30 * 1024 * 1024)
 
-    # CORS
-    origins = [o.strip() for o in app.config.get("CORS_ORIGINS", "").split(",") if o.strip()]
+    # CORS (normalized central allowlist + safe error response safeguard)
+    origins = _collect_allowed_origins(app)
+    origin_set = set(origins)
     CORS(
         app,
         resources={
             r"/api/*": {
-                "origins": origins or "*",
+                "origins": origins,
+                "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
                 "allow_headers": ["Content-Type", "Authorization", "X-Client-Role", "X-User-Role"],
                 "expose_headers": ["Content-Disposition"],
             }
         },
     )
+
+    @app.after_request
+    def _ensure_api_cors_headers(response):
+        req_origin = (request.headers.get("Origin") or "").strip().rstrip("/")
+        if req_origin and req_origin in origin_set and request.path.startswith("/api"):
+            response.headers.setdefault("Access-Control-Allow-Origin", req_origin)
+            if "Origin" not in (response.headers.get("Vary") or ""):
+                response.headers.add("Vary", "Origin")
+            response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Role, X-User-Role")
+            response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+            response.headers.setdefault("Access-Control-Expose-Headers", "Content-Disposition")
+        return response
 
     # Database
     db.init_app(app)
@@ -102,6 +133,13 @@ def create_app(config_name: str = "development") -> Flask:
     @app.errorhandler(413)
     def too_large(e):
         return jsonify({"error": "File too large. Maximum size is 10MB."}), 413
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_exception(e):
+        if isinstance(e, HTTPException):
+            return jsonify({"error": e.description or e.name}), e.code
+        log.error(f"Unhandled API exception ({type(e).__name__})", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
     return app
 

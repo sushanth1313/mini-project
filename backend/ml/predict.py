@@ -7,6 +7,7 @@ Changes in v3:
   - holdout metrics used for validation_mae/r2 (not GroupKFold)
   - reload_model() correctly resets both pipeline and metrics cache
 """
+import gc
 import os
 import json
 import logging
@@ -34,6 +35,7 @@ def _load_pipeline():
                 "Run: python backend/ml/train.py --dataset <path_to_dataset>"
             )
         _pipeline = joblib.load(MODEL_PATH)
+        gc.collect()
         log.info("ML pipeline loaded.")
     return _pipeline
 
@@ -80,6 +82,8 @@ def _load_train_df():
                     lon = pd.to_numeric(df_tmp["longitude"], errors="coerce")
                     df_tmp["dist_mysuru_center_km"] = _haversine_vec(lat, lon, 12.3052, 76.6552)
                 _train_df = derive_region_3class(df_tmp)
+                del df_tmp
+                gc.collect()
                 log.info(f"Training reference dataset loaded: {len(_train_df)} rows from {p}")
                 return _train_df
             except Exception as e:

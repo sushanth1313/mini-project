@@ -3,9 +3,13 @@ Evaluate route: full property evaluation pipeline.
 POST /api/evaluate — runs ML, GIS, scoring, saves to DB.
 POST /api/predict-price — price-only prediction (no DB save).
 """
+import gc
 import json
 import math
 import logging
+import os
+import threading
+import time
 from flask import Blueprint, request, jsonify, current_app
 from models import (
     db, Property, PropertyEvaluation, PricePrediction,
@@ -24,6 +28,36 @@ from services.scoring import (
 
 log = logging.getLogger(__name__)
 evaluate_bp = Blueprint("evaluate", __name__, url_prefix="/api")
+
+# Serialize memory-intensive ML/GIS evaluation runs within a single Gunicorn worker
+# so concurrent requests do not spike RSS above Render Free Tier's 512 MB limit.
+_EVAL_LOCK = threading.Lock()
+
+
+def _get_rss_mb() -> tuple[float, float]:
+    """Return (current_rss_mb, peak_rss_mb) using OS-native APIs without secrets."""
+    cur_mb, peak_mb = 0.0, 0.0
+    try:
+        if os.path.exists("/proc/self/status"):
+            with open("/proc/self/status", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        cur_mb = round(int(line.split()[1]) / 1024.0, 1)
+                    elif line.startswith("VmHWM:"):
+                        peak_mb = round(int(line.split()[1]) / 1024.0, 1)
+        else:
+            import psutil
+            mi = psutil.Process(os.getpid()).memory_info()
+            cur_mb = round(mi.rss / 1048576.0, 1)
+            peak_mb = round(getattr(mi, "peak_wset", mi.rss) / 1048576.0, 1)
+    except Exception:
+        try:
+            import resource
+            peak_mb = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0, 1)
+            cur_mb = peak_mb
+        except Exception:
+            pass
+    return cur_mb, peak_mb
 
 
 @evaluate_bp.route("/predict-price", methods=["POST"])
@@ -166,6 +200,29 @@ def gis_location_search():
 
 @evaluate_bp.route("/evaluate", methods=["POST"])
 def run_evaluation():
+    """Serialize heavy evaluation work under _EVAL_LOCK and log safe stage RSS/timings."""
+    t_wait = time.perf_counter()
+    acquired = _EVAL_LOCK.acquire(timeout=120)
+    if not acquired:
+        return jsonify({
+            "error": "Another property evaluation is currently in progress. Please retry in a few seconds."
+        }), 503
+    cur0, peak0 = _get_rss_mb()
+    log.info(f"[EVAL] acquired lock wait={time.perf_counter()-t_wait:.2f}s rss={cur0}MB peak={peak0}MB")
+    try:
+        resp = _run_evaluation_pipeline()
+        cur1, peak1 = _get_rss_mb()
+        log.info(f"[EVAL] completed elapsed={time.perf_counter()-t_wait:.2f}s rss={cur1}MB peak={max(peak0, peak1)}MB")
+        return resp
+    except Exception:
+        db.session.rollback()
+        raise
+    finally:
+        gc.collect()
+        _EVAL_LOCK.release()
+
+
+def _run_evaluation_pipeline():
     """
     Full evaluation pipeline:
     1. Validate + save property
@@ -531,6 +588,8 @@ def run_evaluation():
         ml_input_dict = impute_missing_gis_features(ml_input_dict)
         input_df = prepare_single_input(ml_input_dict)
         pred_result = predict_price_per_sqft(input_df, input_data=ml_input_dict, explain=True)
+        cur_m, peak_m = _get_rss_mb()
+        log.info(f"[EVAL-ML] rss={cur_m}MB peak={peak_m}MB")
         psf = pred_result["predicted_price_per_sqft"]
 
         evaluation.predicted_price_per_sqft = psf
