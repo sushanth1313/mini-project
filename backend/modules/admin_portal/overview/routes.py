@@ -5,6 +5,11 @@ Computes every KPI, chart series, alert, recent activity, and background job
 directly from the database collections (zero hardcoded static numbers).
 """
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+import os
+import threading
+import time
+from flask import current_app
 from ..compat_flask import Blueprint, jsonify
 from ..config import MYSURU_TALUKS, PROPERTY_TYPES
 from ..database import db_instance
@@ -12,19 +17,108 @@ from ..auth.security import require_permission
 
 overview_bp = Blueprint("admin_overview", __name__, url_prefix="/api/admin/overview")
 
+_CACHE_LOCK = threading.Lock()
+_METRICS_CACHE = {"ts": 0.0, "payload": None}
+_METRICS_TTL_SECONDS = 15.0
+
+
+def invalidate_overview_cache() -> None:
+    """Clear short-lived overview cache when underlying data changes."""
+    with _CACHE_LOCK:
+        _METRICS_CACHE["ts"] = 0.0
+        _METRICS_CACHE["payload"] = None
+
+
+def _count_generated_reports() -> int:
+    """Count generated PDF reports without SHA-256 disk hashing or full joins."""
+    count = 0
+    meta_map = {
+        m.get("report_id"): m
+        for m in db_instance.kv_report_meta._list_docs()
+        if m.get("report_id")
+    }
+    try:
+        from models import Report
+        for r_id, file_path in Report.query.with_entities(Report.id, Report.file_path).all():
+            rid = f"RPT-{r_id:04d}"
+            meta = meta_map.get(rid, {})
+            exists = bool(file_path and os.path.isfile(file_path))
+            status = meta.get("report_status") or ("GENERATED" if exists else "FAILED")
+            if status in ("GENERATED", "GENERATED_WITH_WARNINGS"):
+                count += 1
+    except Exception:
+        pass
+    try:
+        from modules.land_document_analyzer.backend.app import _pipeline
+        for a in _pipeline.db.collection("analyses").find({}, {"_id": 0, "report_pdf_path": 1}):
+            pdf_p = a.get("report_pdf_path")
+            if pdf_p and os.path.isfile(pdf_p):
+                count += 1
+    except Exception:
+        pass
+    return count
+
+
 @overview_bp.route("/metrics", methods=["GET"])
 @require_permission("overview:view")
 def get_dashboard_metrics():
-    users = db_instance["users"].find({}, {"_id": 0, "password_hash": 0, "auth_secret_token": 0})
-    evals = db_instance["property_evaluations"].find({}, {"_id": 0})
-    docs = db_instance["document_analyses"].find({}, {"_id": 0})
-    reports = db_instance["reports"].find({}, {"_id": 0})
-    datasets = db_instance["datasets"].find({}, {"_id": 0})
-    models = db_instance["ml_models"].find({}, {"_id": 0})
-    gis_endpoints = db_instance["gis_endpoints"].find({}, {"_id": 0})
-    gis_logs = db_instance["gis_logs"].find({}, {"_id": 0})
-    bg_jobs = db_instance["background_jobs"].find({}, {"_id": 0})
-    audits = db_instance["audit_logs"].find({}, {"_id": 0})
+    now_mono = time.monotonic()
+    with _CACHE_LOCK:
+        if _METRICS_CACHE["payload"] is not None and (now_mono - _METRICS_CACHE["ts"]) < _METRICS_TTL_SECONDS:
+            return jsonify(_METRICS_CACHE["payload"]), 200
+
+    app_obj = current_app._get_current_object()
+
+    def _run_in_ctx(fn):
+        with app_obj.app_context():
+            try:
+                return fn()
+            finally:
+                try:
+                    from models import db
+                    db.session.remove()
+                except Exception:
+                    pass
+
+    def _fetch_ticket_kpis():
+        pending, high_prio = 0, 0
+        try:
+            from models import SupportTicket
+            pending = SupportTicket.query.filter(
+                SupportTicket.status.in_(("OPEN", "IN_PROGRESS", "AWAITING_USER"))
+            ).count()
+            high_prio = SupportTicket.query.filter(
+                SupportTicket.status.notin_(("RESOLVED", "CLOSED")),
+                SupportTicket.priority.in_(("HIGH", "URGENT")),
+            ).count()
+        except Exception:
+            pass
+        return pending, high_prio
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_users = pool.submit(_run_in_ctx, lambda: db_instance["users"].find({}, {"_id": 0, "password_hash": 0, "auth_secret_token": 0}))
+        f_evals = pool.submit(_run_in_ctx, lambda: db_instance["property_evaluations"].find({}, {"_id": 0}))
+        f_docs = pool.submit(_run_in_ctx, lambda: db_instance["document_analyses"].find({}, {"_id": 0}))
+        f_reports_cnt = pool.submit(_run_in_ctx, _count_generated_reports)
+        f_datasets = pool.submit(_run_in_ctx, lambda: db_instance["datasets"].find({}, {"_id": 0}))
+        f_models = pool.submit(_run_in_ctx, lambda: db_instance["ml_models"].find({}, {"_id": 0}))
+        f_gis_ep = pool.submit(_run_in_ctx, lambda: db_instance["gis_endpoints"].find({}, {"_id": 0}))
+        f_gis_logs = pool.submit(_run_in_ctx, lambda: db_instance["gis_logs"].find({}, {"_id": 0}))
+        f_bg_jobs = pool.submit(_run_in_ctx, lambda: db_instance["background_jobs"].find({}, {"_id": 0}))
+        f_audits = pool.submit(_run_in_ctx, lambda: db_instance["audit_logs"].find({}, {"_id": 0}))
+        f_tickets = pool.submit(_run_in_ctx, _fetch_ticket_kpis)
+
+        users = f_users.result()
+        evals = f_evals.result()
+        docs = f_docs.result()
+        reports_generated = f_reports_cnt.result()
+        datasets = f_datasets.result()
+        models = f_models.result()
+        gis_endpoints = f_gis_ep.result()
+        gis_logs = f_gis_logs.result()
+        bg_jobs = f_bg_jobs.result()
+        audits = f_audits.result()
+        pending_support_tickets, open_high_priority_tickets = f_tickets.result()
 
     from datetime import datetime, timezone
     today_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -33,21 +127,6 @@ def get_dashboard_metrics():
     total_evaluations = len(evals)
     evaluations_today = sum(1 for e in evals if str(e.get("evaluation_date", "")).startswith(today_prefix))
     total_doc_analyses = len(docs)
-    reports_generated = sum(1 for r in reports if r.get("report_status") in ("GENERATED", "GENERATED_WITH_WARNINGS"))
-
-    # Live Support Tickets KPIs from SQLite SupportTicket + CustomerEnquiry
-    pending_support_tickets = 0
-    open_high_priority_tickets = 0
-    try:
-        from models import SupportTicket
-        tickets = SupportTicket.query.all()
-        pending_support_tickets = sum(1 for t in tickets if t.status in ("OPEN", "IN_PROGRESS", "AWAITING_USER"))
-        open_high_priority_tickets = sum(
-            1 for t in tickets
-            if t.status not in ("RESOLVED", "CLOSED") and t.priority in ("HIGH", "URGENT")
-        )
-    except Exception:
-        pass
 
     # Active validated dataset records count
     validated_datasets = [d for d in datasets if d.get("ready_for_training")]
@@ -161,7 +240,7 @@ def get_dashboard_metrics():
     recent_activities = sorted(audits, key=lambda x: x.get("timestamp", ""), reverse=True)[:8]
     recent_evaluations = sorted(evals, key=lambda x: x.get("evaluation_date", ""), reverse=True)[:5]
 
-    return jsonify({
+    payload = {
         "adapter_mode": db_instance.adapter_mode,
         "database_architecture": {
             "primary_store": "SQLite (smart_land_eval.db)",
@@ -195,4 +274,8 @@ def get_dashboard_metrics():
         "recent_evaluations": recent_evaluations,
         "system_alerts": system_alerts,
         "failed_background_jobs": failed_jobs
-    }), 200
+    }
+    with _CACHE_LOCK:
+        _METRICS_CACHE["ts"] = time.monotonic()
+        _METRICS_CACHE["payload"] = payload
+    return jsonify(payload), 200

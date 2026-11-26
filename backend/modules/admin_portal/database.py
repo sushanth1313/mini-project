@@ -826,15 +826,37 @@ class LiveGisLogsCollection(BaseVirtualCollection):
     def _list_docs(self) -> List[Dict[str, Any]]:
         logs = list(self.kv._list_docs())
         if has_app_context():
-            from models import FacilityRecord, GISAnalysis, Property, PropertyEvaluation
+            from sqlalchemy import func
+            from models import FacilityRecord, GISAnalysis, Property, PropertyEvaluation, db
             recent_gis = GISAnalysis.query.order_by(GISAnalysis.id.desc()).limit(60).all()
+            eval_ids = [ga.evaluation_id for ga in recent_gis if ga.evaluation_id]
+            evals_map = (
+                {e.id: e for e in PropertyEvaluation.query.filter(PropertyEvaluation.id.in_(eval_ids)).all()}
+                if eval_ids else {}
+            )
+            prop_ids = {e.property_id for e in evals_map.values() if e.property_id}
+            props_map = (
+                {p.id: p for p in Property.query.filter(Property.id.in_(prop_ids)).all()}
+                if prop_ids else {}
+            )
+            fac_counts: Dict[int, Dict[str, int]] = {}
+            if eval_ids:
+                grouped = (
+                    db.session.query(FacilityRecord.evaluation_id, FacilityRecord.status, func.count(FacilityRecord.id))
+                    .filter(FacilityRecord.evaluation_id.in_(eval_ids))
+                    .group_by(FacilityRecord.evaluation_id, FacilityRecord.status)
+                    .all()
+                )
+                for eid, st, cnt in grouped:
+                    fac_counts.setdefault(eid, {})[st] = int(cnt)
+
             for ga in recent_gis:
-                ev = PropertyEvaluation.query.get(ga.evaluation_id)
-                prop = Property.query.get(ev.property_id) if ev else None
-                facs = FacilityRecord.query.filter_by(evaluation_id=ga.evaluation_id).all()
-                succ = sum(1 for f in facs if f.status == "SUCCESS")
-                unavail = sum(1 for f in facs if f.status == "SOURCE_UNAVAILABLE")
-                part = sum(1 for f in facs if f.status == "PARTIAL")
+                ev = evals_map.get(ga.evaluation_id)
+                prop = props_map.get(ev.property_id) if ev else None
+                counts = fac_counts.get(ga.evaluation_id, {})
+                succ = counts.get("SUCCESS", 0)
+                unavail = counts.get("SOURCE_UNAVAILABLE", 0)
+                part = counts.get("PARTIAL", 0)
                 status_val = "SUCCESS" if succ > 0 and unavail == 0 else ("SOURCE_UNAVAILABLE" if unavail > 0 and succ == 0 else ("PARTIAL" if part > 0 or unavail > 0 else "NO_DATA"))
                 logs.append({
                     "log_id": f"GIS-EV-{ga.evaluation_id}",
@@ -982,11 +1004,18 @@ class LiveReportsCollection(BaseVirtualCollection):
         if has_app_context():
             from models import PlatformUser, Property, PropertyEvaluation, Report
             rows = Report.query.order_by(Report.id.desc()).all()
+            prop_ids = {r.property_id for r in rows if r.property_id}
+            eval_ids = {r.evaluation_id for r in rows if r.evaluation_id}
+            props_map = {p.id: p for p in Property.query.filter(Property.id.in_(prop_ids)).all()} if prop_ids else {}
+            evals_map = {e.id: e for e in PropertyEvaluation.query.filter(PropertyEvaluation.id.in_(eval_ids)).all()} if eval_ids else {}
+            user_ids = {p.user_id for p in props_map.values() if p.user_id}
+            users_map = {u.id: u for u in PlatformUser.query.filter(PlatformUser.id.in_(user_ids)).all()} if user_ids else {}
+
             for r in rows:
                 rid = f"RPT-{r.id:04d}"
-                prop = Property.query.get(r.property_id) if r.property_id else None
-                ev = PropertyEvaluation.query.get(r.evaluation_id) if r.evaluation_id else None
-                owner = PlatformUser.query.get(prop.user_id) if (prop and prop.user_id) else None
+                prop = props_map.get(r.property_id) if r.property_id else None
+                ev = evals_map.get(r.evaluation_id) if r.evaluation_id else None
+                owner = users_map.get(prop.user_id) if (prop and prop.user_id) else None
                 exists = bool(r.file_path and os.path.isfile(r.file_path))
                 meta = meta_map.get(rid, {})
                 docs.append({
