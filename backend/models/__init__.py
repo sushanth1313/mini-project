@@ -27,7 +27,7 @@ class Property(db.Model):
     latitude = db.Column(db.Float, nullable=True)
     longitude = db.Column(db.Float, nullable=True)
     coordinate_status = db.Column(db.String(50), default="LOCALITY_CENTROID")
-    coordinate_source = db.Column(db.String(100), nullable=True)
+    coordinate_source = db.Column(db.String(255), nullable=True)
 
     road_width_ft = db.Column(db.Float, nullable=True)
     road_quality = db.Column(db.String(50), nullable=True)
@@ -253,7 +253,7 @@ class FacilityRecord(db.Model):
     count_within_1km = db.Column(db.Integer, nullable=True)
     count_within_3km = db.Column(db.Integer, nullable=True)
     count_within_5km = db.Column(db.Integer, nullable=True)
-    source = db.Column(db.String(100), default="OSM/Overpass API")
+    source = db.Column(db.String(255), default="OSM/Overpass API")
     status = db.Column(db.String(50), default="SUCCESS")
     retrieved_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -309,7 +309,7 @@ class DocumentExtraction(db.Model):
     document_id = db.Column(db.Integer, db.ForeignKey("documents.id"), nullable=False)
     raw_text = db.Column(db.Text, nullable=True)
     owner_name = db.Column(db.String(200), nullable=True)
-    survey_number = db.Column(db.String(100), nullable=True)
+    survey_number = db.Column(db.String(255), nullable=True)
     document_type = db.Column(db.String(100), nullable=True)
     village = db.Column(db.String(100), nullable=True)
     taluk = db.Column(db.String(100), nullable=True)
@@ -394,7 +394,7 @@ class DataSource(db.Model):
     source_url = db.Column(db.String(500), nullable=True)
     data_date = db.Column(db.String(50), nullable=True)
     description = db.Column(db.Text, nullable=True)
-    confidence = db.Column(db.String(50), nullable=True)
+    confidence = db.Column(db.String(255), nullable=True)
     status = db.Column(db.String(50), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

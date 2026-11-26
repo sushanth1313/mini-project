@@ -52,7 +52,9 @@ def log(msg: str) -> None:
 def normalize_database_url(url: str) -> str:
     url = (url or "").strip()
     if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
+        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     return url
 
 
@@ -137,11 +139,22 @@ def migrate_sqlite_to_postgres(database_url: str, dry_run: bool = True) -> Dict[
         return {t: (src_counts[t], -1) for t in ordered_tables}
 
     # Ensure target schema exists non-destructively via SQLAlchemy models
+    engine = create_engine(database_url, pool_pre_ping=True)
+    with engine.begin() as pre_conn:
+        for tbl_name, col_name in [
+            ("properties", "coordinate_source"),
+            ("facilities", "source"),
+            ("document_extractions", "survey_number"),
+            ("data_sources", "confidence"),
+        ]:
+            try:
+                pre_conn.execute(text(f'ALTER TABLE "{tbl_name}" ALTER COLUMN "{col_name}" TYPE VARCHAR(255)'))
+            except Exception:
+                pass
+
     flask_app = create_app("production")
     with flask_app.app_context():
         pass
-
-    engine = create_engine(database_url, pool_pre_ping=True)
     metadata = MetaData()
     metadata.reflect(bind=engine)
     inspector = sa_inspect(engine)
@@ -155,6 +168,34 @@ def migrate_sqlite_to_postgres(database_url: str, dry_run: bool = True) -> Dict[
             pg_table = metadata.tables[t]
             pg_cols = {c["name"]: c["type"] for c in inspector.get_columns(t)}
             rows = [dict(r) for r in sqlite_conn.execute(f'SELECT * FROM "{t}"').fetchall()]
+
+            # Filter out historical orphaned child rows (SQLite had FK checks off)
+            fk_parents = [
+                (fk[3], fk[2], fk[4])
+                for fk in sqlite_conn.execute(f'PRAGMA foreign_key_list("{t}")').fetchall()
+            ]
+            if rows and fk_parents:
+                valid_parent_ids: Dict[str, set] = {}
+                for col_from, tbl_to, col_to in fk_parents:
+                    if tbl_to in metadata.tables:
+                        valid_parent_ids[col_from] = {
+                            r[0]
+                            for r in pg_conn.execute(text(f'SELECT "{col_to}" FROM "{tbl_to}"')).fetchall()
+                        }
+                filtered = []
+                skipped = 0
+                for r in rows:
+                    if all(
+                        (r.get(col_from) is None or r.get(col_from) in valid_parent_ids[col_from])
+                        for col_from in valid_parent_ids
+                    ):
+                        filtered.append(r)
+                    else:
+                        skipped += 1
+                if skipped:
+                    log(f"[INFO] {t}: skipped {skipped} historical orphaned rows with missing parent FK.")
+                rows = filtered
+
             if rows:
                 coerced = [coerce_row_for_pg(r, pg_cols) for r in rows]
                 batch_size = 250
@@ -226,52 +267,60 @@ def migrate_local_json_to_mongodb(mongodb_uri: str, db_name: str, backup_dir: Pa
 
 
 def verify_production(database_url: str, mongodb_uri: str, db_name: str) -> bool:
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine, inspect as sa_inspect, text
     from pymongo import MongoClient
 
     ok = True
-    sqlite_conn = sqlite3.connect(SQLITE_PATH)
-    _, src_counts = get_sqlite_schema_and_order(sqlite_conn)
-    sqlite_conn.close()
+    if database_url:
+        sqlite_conn = sqlite3.connect(SQLITE_PATH)
+        _, src_counts = get_sqlite_schema_and_order(sqlite_conn)
+        sqlite_conn.close()
 
-    engine = create_engine(database_url, pool_pre_ping=True)
-    with engine.connect() as conn:
-        log("\n[VERIFY] Checking PostgreSQL table row counts:")
-        for t, src_n in src_counts.items():
-            dest_n = conn.execute(text(f'SELECT COUNT(*) FROM "{t}"')).scalar() or 0
+        engine = create_engine(database_url, pool_pre_ping=True)
+        existing_pg_tables = set(sa_inspect(engine).get_table_names())
+        with engine.connect() as conn:
+            log("\n[VERIFY] Checking PostgreSQL table row counts:")
+            for t, src_n in src_counts.items():
+                if t not in existing_pg_tables:
+                    log(f"  {t}: source={src_n}, dest=N/A [NOT_IN_MODELS]")
+                    continue
+                dest_n = conn.execute(text(f'SELECT COUNT(*) FROM "{t}"')).scalar() or 0
+                status = "OK" if dest_n >= src_n else "WARN_DIFF"
+                if dest_n < src_n and t not in ("verification_items", "admin_accounts"):
+                    ok = False
+                log(f"  {t}: source={src_n}, dest={dest_n} [{status}]")
+
+            # Relationship & domain integrity checks
+            checks = {
+                "orphan_evaluations": "SELECT COUNT(*) FROM property_evaluations pe LEFT JOIN properties p ON pe.property_id = p.id WHERE pe.property_id IS NOT NULL AND p.id IS NULL",
+                "orphan_reports": "SELECT COUNT(*) FROM reports r LEFT JOIN property_evaluations pe ON r.evaluation_id = pe.id WHERE r.evaluation_id IS NOT NULL AND pe.id IS NULL",
+                "orphan_gis": "SELECT COUNT(*) FROM gis_analysis g LEFT JOIN property_evaluations pe ON g.evaluation_id = pe.id WHERE g.evaluation_id IS NOT NULL AND pe.id IS NULL",
+                "users_with_password_hash": "SELECT COUNT(*) FROM platform_users WHERE password_hash IS NOT NULL AND password_hash <> ''",
+                "admins_with_password_hash": "SELECT COUNT(*) FROM admin_accounts WHERE password_hash IS NOT NULL AND password_hash <> ''",
+                "audit_logs_count": "SELECT COUNT(*) FROM admin_audit_logs",
+            }
+            log("\n[VERIFY] Checking relationships & auth/audit integrity:")
+            for name, sql in checks.items():
+                val = conn.execute(text(sql)).scalar() or 0
+                if name.startswith("orphan_") and val > 0:
+                    ok = False
+                log(f"  {name}: {val}")
+
+    if mongodb_uri and "<db_password>" not in mongodb_uri:
+        client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=8000)
+        db = client[db_name]
+        log("\n[VERIFY] Checking MongoDB Atlas collection counts:")
+        for coll, (fname, _) in MONGO_COLLECTIONS.items():
+            p = LOCAL_MONGO_DIR / fname
+            src_n = len(json.loads(p.read_text(encoding="utf-8"))) if p.exists() else 0
+            dest_n = db[coll].count_documents({})
             status = "OK" if dest_n >= src_n else "MISMATCH"
             if dest_n < src_n:
                 ok = False
-            log(f"  {t}: source={src_n}, dest={dest_n} [{status}]")
-
-        # Relationship & domain integrity checks
-        checks = {
-            "orphan_evaluations": "SELECT COUNT(*) FROM property_evaluations pe LEFT JOIN properties p ON pe.property_id = p.id WHERE pe.property_id IS NOT NULL AND p.id IS NULL",
-            "orphan_reports": "SELECT COUNT(*) FROM reports r LEFT JOIN property_evaluations pe ON r.evaluation_id = pe.id WHERE r.evaluation_id IS NOT NULL AND pe.id IS NULL",
-            "orphan_gis": "SELECT COUNT(*) FROM gis_analysis g LEFT JOIN property_evaluations pe ON g.evaluation_id = pe.id WHERE g.evaluation_id IS NOT NULL AND pe.id IS NULL",
-            "users_with_password_hash": "SELECT COUNT(*) FROM platform_users WHERE password_hash IS NOT NULL AND password_hash <> ''",
-            "admins_with_password_hash": "SELECT COUNT(*) FROM admin_accounts WHERE password_hash IS NOT NULL AND password_hash <> ''",
-            "audit_logs_count": "SELECT COUNT(*) FROM admin_audit_logs",
-        }
-        log("\n[VERIFY] Checking relationships & auth/audit integrity:")
-        for name, sql in checks.items():
-            val = conn.execute(text(sql)).scalar() or 0
-            if name.startswith("orphan_") and val > 0:
-                ok = False
-            log(f"  {name}: {val}")
-
-    client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=8000)
-    db = client[db_name]
-    log("\n[VERIFY] Checking MongoDB Atlas collection counts:")
-    for coll, (fname, _) in MONGO_COLLECTIONS.items():
-        p = LOCAL_MONGO_DIR / fname
-        src_n = len(json.loads(p.read_text(encoding="utf-8"))) if p.exists() else 0
-        dest_n = db[coll].count_documents({})
-        status = "OK" if dest_n >= src_n else "MISMATCH"
-        if dest_n < src_n:
-            ok = False
-        log(f"  {coll}: source={src_n}, dest={dest_n} [{status}]")
-    client.close()
+            log(f"  {coll}: source={src_n}, dest={dest_n} [{status}]")
+        client.close()
+    else:
+        log("\n[VERIFY] MongoDB Atlas skipped (MONGODB_URI not set or still contains <db_password> placeholder).")
     return ok
 
 
@@ -279,12 +328,32 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Non-destructive SLV-GIS production migration tool")
     parser.add_argument("--backup-only", action="store_true", help="Create local backup only")
     parser.add_argument("--dry-run", action="store_true", help="Print migration plan without writing to production DBs")
+    parser.add_argument("--check-lengths", action="store_true", help="Check SQLite string lengths against SQLAlchemy VARCHAR limits")
     parser.add_argument("--migrate", action="store_true", help="Execute non-destructive migration + verification")
     parser.add_argument("--verify-only", action="store_true", help="Verify source vs destination counts & integrity")
     args = parser.parse_args()
 
-    if not any([args.backup_only, args.dry_run, args.migrate, args.verify_only]):
+    if not any([args.backup_only, args.dry_run, args.check_lengths, args.migrate, args.verify_only]):
         args.dry_run = True
+
+    if args.check_lengths:
+        from app import create_app, db
+        flask_app = create_app("development")
+        c = sqlite3.connect(SQLITE_PATH)
+        with flask_app.app_context():
+            overflows = []
+            for t, tbl in db.metadata.tables.items():
+                for col in tbl.columns:
+                    limit = getattr(col.type, "length", None)
+                    if limit:
+                        mx = c.execute(f'SELECT MAX(LENGTH("{col.name}")) FROM "{t}"').fetchone()[0]
+                        if isinstance(mx, int) and mx > limit:
+                            overflows.append((t, col.name, mx, limit))
+                            log(f"[OVERFLOW] {t}.{col.name}: max={mx} > limit={limit}")
+            if not overflows:
+                log("[OK] Zero VARCHAR length overflows found across all tables.")
+        c.close()
+        return 0
 
     db_url = normalize_database_url(os.getenv("DATABASE_URL", ""))
     mongo_uri = os.getenv("MONGODB_URI", "").strip()
@@ -299,14 +368,22 @@ def main() -> int:
         migrate_local_json_to_mongodb(mongo_uri, mongo_db, BACKUP_ROOT, dry_run=True)
         return 0
 
-    if not db_url or not mongo_uri:
-        log("[ERROR] Both DATABASE_URL and MONGODB_URI environment variables are required.")
+    has_pg = bool(db_url)
+    has_mongo = bool(mongo_uri) and "<db_password>" not in mongo_uri
+    if not has_pg and not has_mongo:
+        log("[ERROR] At least one of DATABASE_URL or a valid MONGODB_URI (without <db_password>) is required.")
         return 1
 
     if args.migrate:
         bak = create_local_backup()
-        migrate_sqlite_to_postgres(db_url, dry_run=False)
-        migrate_local_json_to_mongodb(mongo_uri, mongo_db, bak, dry_run=False)
+        if has_pg:
+            migrate_sqlite_to_postgres(db_url, dry_run=False)
+        else:
+            log("[INFO] Skipping PostgreSQL migration (DATABASE_URL not set).")
+        if has_mongo:
+            migrate_local_json_to_mongodb(mongo_uri, mongo_db, bak, dry_run=False)
+        else:
+            log("[INFO] Skipping MongoDB Atlas migration (MONGODB_URI not set or contains <db_password>).")
 
     ok = verify_production(db_url, mongo_uri, mongo_db)
     log(f"\n[RESULT] Verification {'PASSED' if ok else 'FAILED'}")

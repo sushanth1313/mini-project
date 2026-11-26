@@ -129,6 +129,20 @@ def _ensure_schema_migrations():
             db.session.rollback()
             log.warning(f"Schema check skipped for {table}.{col}: {e}")
 
+    # Widen VARCHAR columns on PostgreSQL where historical SQLite rows exceed old limits
+    if db.engine.dialect.name == "postgresql":
+        for table, col in [
+            ("properties", "coordinate_source"),
+            ("facilities", "source"),
+            ("document_extractions", "survey_number"),
+            ("data_sources", "confidence"),
+        ]:
+            try:
+                db.session.execute(text(f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE VARCHAR(255)'))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
     # Non-destructive canonical enum normalization for existing PlatformUser & AdminAccount rows
     try:
         from models import AdminAccount, PlatformUser
