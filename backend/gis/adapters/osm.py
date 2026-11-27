@@ -93,7 +93,25 @@ OVERPASS_ENDPOINTS = [
     "https://overpass.openstreetmap.fr/api/interpreter",
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
 ]
+
+_PHOTON_TERMS = {
+    "school": "school",
+    "hospital": "hospital",
+    "clinic": "clinic",
+    "supermarket": "supermarket",
+    "market": "market",
+    "pharmacy": "pharmacy",
+    "bus_stop": "bus station",
+    "railway_station": "railway station",
+    "bank": "bank",
+    "police": "police station",
+    "atm": "atm",
+    "park": "park",
+    "waterbody": "lake",
+    "canal": "canal",
+}
 
 # Allowed OSM (class, type) validation for Nominatim keyword fallback to prevent unrelated POIs
 _NOMINATIM_ALLOWED_CLASSES = {
@@ -245,7 +263,8 @@ class OSMAdapter(BaseAdapter):
             success_count = 0
             error_count = 0
 
-            for term in terms:
+            # Use primary tag/keyword query first; only try fallback term if primary returned 0 items
+            for idx_t, term in enumerate(terms[:2]):
                 params = urllib.parse.urlencode({
                     "format": "json",
                     "q": term,
@@ -255,19 +274,14 @@ class OSMAdapter(BaseAdapter):
                 })
                 url = f"https://nominatim.openstreetmap.org/search?{params}"
                 items = None
-                for attempt in range(2):
-                    try:
-                        req = urllib.request.Request(url, headers=headers)
-                        with urllib.request.urlopen(req, timeout=6) as resp:
-                            items = json.loads(resp.read().decode("utf-8"))
-                            success_count += 1
-                            break
-                    except Exception as ex:
-                        if attempt == 0:
-                            time.sleep(0.35)
-                        else:
-                            error_count += 1
-                            log.warning(f"Nominatim query failed for {cat}/{term}: {ex}")
+                try:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=4.5) as resp:
+                        items = json.loads(resp.read().decode("utf-8"))
+                        success_count += 1
+                except Exception as ex:
+                    error_count += 1
+                    log.warning(f"Nominatim query failed for {cat}/{term}: {ex}")
                 if items:
                     allowed_map = _NOMINATIM_ALLOWED_CLASSES.get(cat, {})
                     for item in items:
@@ -332,7 +346,70 @@ class OSMAdapter(BaseAdapter):
                             })
                         except Exception:
                             continue
-                time.sleep(0.1)
+                if found_for_cat or idx_t >= 1:
+                    break
+                time.sleep(0.05)
+
+            # Photon spatial POI fallback if Nominatim was empty or errored
+            if not found_for_cat and cat in _PHOTON_TERMS:
+                p_url = "https://photon.komoot.io/api/?" + urllib.parse.urlencode({
+                    "q": _PHOTON_TERMS[cat],
+                    "lat": f"{lat:.5f}",
+                    "lon": f"{lon:.5f}",
+                    "limit": 8,
+                })
+                try:
+                    req = urllib.request.Request(p_url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=4.5) as resp:
+                        p_data = json.loads(resp.read().decode("utf-8"))
+                        success_count += 1
+                    allowed_map = _NOMINATIM_ALLOWED_CLASSES.get(cat, {})
+                    for feat in (p_data or {}).get("features", []) or []:
+                        coords = (feat.get("geometry") or {}).get("coordinates") or []
+                        props = feat.get("properties") or {}
+                        if len(coords) < 2:
+                            continue
+                        elon, elat = float(coords[0]), float(coords[1])
+                        iclass = str(props.get("osm_key") or "").strip().lower()
+                        itype = str(props.get("osm_value") or "").strip().lower()
+                        if allowed_map:
+                            valid_types = allowed_map.get(iclass)
+                            if valid_types is None or (valid_types and itype not in valid_types):
+                                continue
+                        dist = self.haversine(lat, lon, elat, elon)
+                        if dist > (cat_radius_m / 1000.0) * 1.15:
+                            continue
+                        raw_osm_id = props.get("osm_id", 0)
+                        raw_osm_type = {"N": "node", "W": "way", "R": "relation"}.get(str(props.get("osm_type") or ""), "node")
+                        osm_id = f"{raw_osm_type}_{raw_osm_id}"
+                        coord_key = (round(elat, 4), round(elon, 4))
+                        if osm_id in seen_ids or coord_key in seen_coords:
+                            continue
+                        seen_ids.add(osm_id)
+                        seen_coords.add(coord_key)
+                        raw_name = (props.get("name") or "").strip() or self._default_name_for_cat(cat, {})
+                        found_for_cat.append({
+                            "id": f"osm_ph_{osm_id}",
+                            "osm_id": raw_osm_id,
+                            "osm_type": raw_osm_type,
+                            "tags": {"class": iclass, "type": itype},
+                            "name": raw_name,
+                            "category": cat,
+                            "latitude": elat,
+                            "longitude": elon,
+                            "distance_km": round(dist, 3),
+                            "distance_type": "calculated",
+                            "source": "OpenStreetMap (Photon Fallback)",
+                            "source_type": "osm",
+                            "source_url": "https://photon.komoot.io",
+                            "retrieved_at": self.now_iso(),
+                            "confidence": "unverified_nominatim_geocoder",
+                            "is_confirmed_poi": False,
+                            "coverage": "partial_nominatim_fallback",
+                        })
+                except Exception as pex:
+                    error_count += 1
+                    log.warning(f"Photon fallback failed for {cat}: {pex}")
 
             found_for_cat.sort(key=lambda x: x["distance_km"])
             if success_count == 0:
@@ -346,13 +423,13 @@ class OSMAdapter(BaseAdapter):
 
         try:
             cat_statuses = {}
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
             try:
                 future_to_cat = {
                     executor.submit(_fetch_cat, cat, terms): cat
                     for cat, terms in NOMINATIM_TERMS.items()
                 }
-                done, not_done = concurrent.futures.wait(future_to_cat.keys(), timeout=26)
+                done, not_done = concurrent.futures.wait(future_to_cat.keys(), timeout=14)
                 for future in done:
                     try:
                         cat, items, c_status = future.result()
@@ -423,7 +500,7 @@ class OSMAdapter(BaseAdapter):
                     query_parts.append(f'  relation["{k}"="{v}"](around:{r},{lat},{lon});')
 
         query_body = "\n".join(query_parts)
-        overpass_q_timeout = max(6, min(self.timeout, 10))
+        overpass_q_timeout = max(4, min(self.timeout, 6))
         cat_query = f"""[out:json][timeout:{overpass_q_timeout}];
 (
 {query_body}
@@ -434,9 +511,9 @@ out center tags;
         used_endpoint = None
         using_default_eps = (self.endpoints == OVERPASS_ENDPOINTS)
         if using_default_eps and is_overpass_circuit_open():
-            log.info("Overpass circuit breaker OPEN — skipping Overpass and using Nominatim fallback directly.")
+            log.info("Overpass circuit breaker OPEN — skipping Overpass and using Nominatim/Photon fallback directly.")
         else:
-            # Query endpoints concurrently; take first valid JSON response within 11 s
+            # Query endpoints concurrently; fail fast in <= 7 s so fallback finishes quickly
             ep_pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(self.endpoints) or 1)
             try:
                 ep_futs = {
@@ -444,7 +521,7 @@ out center tags;
                     for ep in self.endpoints
                 }
                 pending = set(ep_futs.keys())
-                deadline = _time.monotonic() + (overpass_q_timeout + 2)
+                deadline = _time.monotonic() + (overpass_q_timeout + 1)
                 while pending:
                     rem = max(0.1, deadline - _time.monotonic())
                     done, pending = concurrent.futures.wait(

@@ -94,10 +94,10 @@ def get_nearby_facilities(lat: float, lon: float, overpass_url: str = OVERPASS_U
     from .enrichment import LocationEnrichment, _is_generic_name
     from datetime import datetime, timezone
     
+    from .adapters.osm import OVERPASS_ENDPOINTS
     orchestrator = LocationEnrichment()
-    # Fix: update the actual endpoints list (not an ignored overpass_url attribute)
     if overpass_url and overpass_url != OVERPASS_URL:
-        orchestrator.osm.endpoints = [overpass_url]
+        orchestrator.osm.endpoints = [overpass_url] + [ep for ep in OVERPASS_ENDPOINTS if ep != overpass_url]
     orchestrator.osm.timeout = timeout
     
     facilities_response = orchestrator.get_facilities(lat, lon, radius_m=5000, locality=locality, district=district)

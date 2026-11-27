@@ -149,14 +149,14 @@ class LocationEnrichment:
         ]
         all_facilities = {cat: [] for cat in cats}
 
-        # 1 + 2. Primary OSM and Google Places run CONCURRENTLY (bounded: 40 s each; never block on stuck threads)
+        # 1 + 2. Primary OSM and Google Places run CONCURRENTLY (bounded: 24 s each; never block on stuck threads)
         osm_res = None
         google_res = None
         _pool = _cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="gis_primary")
         try:
             _fut_osm = _pool.submit(self.osm.fetch_facilities, lat, lon, radius_m)
             _fut_google = _pool.submit(self.google.fetch_facilities, lat, lon, radius_m)
-            _done, _not_done = _cf.wait((_fut_osm, _fut_google), timeout=40)
+            _done, _not_done = _cf.wait((_fut_osm, _fut_google), timeout=24)
             if _fut_osm in _done:
                 try:
                     osm_res = _fut_osm.result()
