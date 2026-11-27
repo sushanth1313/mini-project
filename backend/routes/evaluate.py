@@ -15,8 +15,7 @@ from models import (
     db, Property, PropertyEvaluation, PricePrediction,
     GISAnalysis, FacilityRecord, DatasetRecord
 )
-from ml.preprocess import prepare_single_input
-from ml.predict import predict_price_per_sqft, get_model_metrics, release_os_memory
+from ml.lightweight import get_model_metrics, release_os_memory, run_ml_worker
 from gis.service import (
     get_nearby_facilities, geocode_locality,
     reverse_geocode_coords, resolve_entered_vs_coordinates, search_locations,
@@ -79,9 +78,8 @@ def predict_price():
         return jsonify({"error": "land_area_sqft must be a valid number"}), 422
 
     try:
-        input_df = prepare_single_input(data)
         explain_flag = bool(data.get("explain", False))
-        result = predict_price_per_sqft(input_df, explain=explain_flag)
+        result = run_ml_worker(data, mode="predict_price", explain=explain_flag)
 
         psf = result["predicted_price_per_sqft"]
         result["predicted_total_price"] = round(psf * area, 2)
@@ -624,22 +622,13 @@ def _run_evaluation_pipeline():
     if unified_data.get("nearest_hospital_km") in (None, "") and facilities_raw.get("clinic", {}).get("nearest_distance_km") is not None:
         unified_data["nearest_hospital_km"] = facilities_raw["clinic"]["nearest_distance_km"]
 
-    # ── Step 2: ML Price Prediction (uses real GIS features + canonical ML land_type) ─
+    # ── Step 2: ML Price Prediction (isolated subprocess protects 512 MB cgroup) ─
     release_os_memory()
     pred_result = None
     try:
-        from services.classification_service import map_land_type_for_ml
-        from ml.predict import impute_missing_gis_features
-        ml_input_dict = dict(unified_data)
-        if ml_input_dict.get("village_or_locality") in ("Locality Requires Verification", "Locality could not be confidently resolved"):
-            ml_input_dict["village_or_locality"] = "Unknown"
-        ml_input_dict["land_type"] = map_land_type_for_ml(ml_input_dict.get("land_type"))
-        # Prevent missing/unavailable GIS from falling back to rural-heavy district medians
-        ml_input_dict = impute_missing_gis_features(ml_input_dict)
-        input_df = prepare_single_input(ml_input_dict)
-        pred_result = predict_price_per_sqft(input_df, input_data=ml_input_dict, explain=True)
+        pred_result = run_ml_worker(unified_data, mode="evaluate", explain=True)
         cur_m, peak_m = _get_rss_mb()
-        log.info(f"[EVAL-ML] rss={cur_m}MB peak={peak_m}MB")
+        log.info(f"[EVAL-ML] worker_rss={cur_m}MB worker_peak={peak_m}MB")
         psf = pred_result["predicted_price_per_sqft"]
 
         evaluation.predicted_price_per_sqft = psf

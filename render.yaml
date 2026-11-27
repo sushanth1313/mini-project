@@ -9,6 +9,14 @@ services:
     envVars:
       - key: FLASK_ENV
         value: production
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: NUMEXPR_NUM_THREADS
+        value: "1"
       - key: SECRET_KEY
         generateValue: true
       - key: ADMIN_SECRET_KEY

@@ -370,7 +370,7 @@ def generate_pdf_report(
     _loaded_m  = {}
     if not (evaluation.get("kfold_r2") and evaluation.get("groupkfold_mae")):
         try:
-            from ml.predict import _load_metrics
+            from ml.lightweight import _load_metrics
             _loaded_m = _load_metrics() or {}
         except Exception:
             _loaded_m = {}

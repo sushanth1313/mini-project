@@ -5,8 +5,6 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
-import pytesseract
 from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
 
 from modules.land_document_analyzer.backend.config.settings import Settings
@@ -26,6 +24,29 @@ fitz = None
 pdfplumber = None
 PdfReader = None
 pdfium = None
+np = None
+pytesseract = None
+
+
+def _get_np():
+    global np
+    if np is None:
+        import numpy as _np
+        np = _np
+    return np
+
+
+_TESSERACT_CMD_RESOLVED = ""
+
+
+def _get_pytesseract():
+    global pytesseract
+    if pytesseract is None:
+        import pytesseract as _pt
+        if _TESSERACT_CMD_RESOLVED:
+            _pt.pytesseract.tesseract_cmd = _TESSERACT_CMD_RESOLVED
+        pytesseract = _pt
+    return pytesseract
 
 
 def _get_cv2():
@@ -86,6 +107,7 @@ class OCRService:
 
     @staticmethod
     def _configure_tesseract() -> bool:
+        global _TESSERACT_CMD_RESOLVED
         cmd = (Settings.TESSERACT_CMD or "").strip()
         resolved = ""
         if cmd:
@@ -96,14 +118,31 @@ class OCRService:
         if not resolved:
             resolved = shutil.which("tesseract") or ""
         if resolved:
-            pytesseract.pytesseract.tesseract_cmd = resolved
+            _TESSERACT_CMD_RESOLVED = resolved
+            if pytesseract is not None:
+                pytesseract.pytesseract.tesseract_cmd = resolved
             return True
         return False
 
     @staticmethod
     def _detect_installed_languages() -> List[str]:
+        if _TESSERACT_CMD_RESOLVED:
+            try:
+                import subprocess
+                out = subprocess.run(
+                    [_TESSERACT_CMD_RESOLVED, "--list-langs"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                lines = [ln.strip() for ln in (out.stdout or "").splitlines()[1:] if ln.strip()]
+                if lines:
+                    return lines
+            except Exception:
+                pass
         try:
-            langs = pytesseract.get_languages(config="")
+            pt = _get_pytesseract()
+            langs = pt.get_languages(config="")
             return langs or ["eng"]
         except Exception:
             return ["eng"]
@@ -368,9 +407,10 @@ class OCRService:
             return self._ocr_unavailable_page(page_number)
 
         try:
+            np_mod = _get_np()
             cv2_mod = _get_cv2()
             if CV2_AVAILABLE and cv2_mod is not None:
-                cv_img = cv2_mod.cvtColor(np.array(pil_image), cv2_mod.COLOR_RGB2BGR)
+                cv_img = cv2_mod.cvtColor(np_mod.array(pil_image), cv2_mod.COLOR_RGB2BGR)
                 rotation_deg = self._detect_orientation(cv_img)
                 if rotation_deg in (90, 180, 270):
                     cv_img = self._rotate_right_angle(cv_img, rotation_deg)
@@ -388,7 +428,7 @@ class OCRService:
                 method_name = "opencv_tesseract_ocr"
             else:
                 work_img = ImageOps.exif_transpose(pil_image)
-                rotation_deg = self._detect_orientation(np.array(work_img))
+                rotation_deg = self._detect_orientation(np_mod.array(work_img))
                 if rotation_deg in (90, 180, 270):
                     work_img = work_img.rotate(-rotation_deg, expand=True)
                 gray_pil = ImageOps.autocontrast(work_img.convert("L"))
@@ -400,17 +440,18 @@ class OCRService:
                         resample=Image.Resampling.BICUBIC,
                     )
                 denoised_pil = gray_pil.filter(ImageFilter.MedianFilter(size=3))
-                denoised = np.array(denoised_pil)
-                cutoff = float(np.percentile(denoised, 45))
-                thresh = np.where(denoised > cutoff, 255, 0).astype(np.uint8)
+                denoised = np_mod.array(denoised_pil)
+                cutoff = float(np_mod.percentile(denoised, 45))
+                thresh = np_mod.where(denoised > cutoff, 255, 0).astype(np_mod.uint8)
                 method_name = "pillow_tesseract_ocr"
 
             text_a, conf_a = self._run_tesseract_with_conf(denoised)
             text_b, conf_b = self._run_tesseract_with_conf(thresh)
-        except pytesseract.TesseractNotFoundError:
-            self.tesseract_available = False
-            return self._ocr_unavailable_page(page_number)
         except Exception as exc:
+            pt = _get_pytesseract()
+            if isinstance(exc, pt.TesseractNotFoundError):
+                self.tesseract_available = False
+                return self._ocr_unavailable_page(page_number)
             logger.warning("Tesseract OCR error on page %s: %s", page_number, type(exc).__name__)
             return {
                 "page_number": page_number,
@@ -453,9 +494,10 @@ class OCRService:
         }
 
     @staticmethod
-    def _detect_orientation(cv_img: np.ndarray) -> int:
+    def _detect_orientation(cv_img: Any) -> int:
         try:
-            osd = pytesseract.image_to_osd(cv_img)
+            pt = _get_pytesseract()
+            osd = pt.image_to_osd(cv_img)
             match = re.search(r"Rotate:\s*(\d+)", osd)
             if match:
                 return int(match.group(1)) % 360
@@ -464,7 +506,7 @@ class OCRService:
         return 0
 
     @staticmethod
-    def _rotate_right_angle(cv_img: np.ndarray, degrees: int) -> np.ndarray:
+    def _rotate_right_angle(cv_img: Any, degrees: int) -> Any:
         cv2_mod = _get_cv2()
         if cv2_mod is None:
             return cv_img
@@ -476,10 +518,11 @@ class OCRService:
             return cv2_mod.rotate(cv_img, cv2_mod.ROTATE_90_COUNTERCLOCKWISE)
         return cv_img
 
-    def _run_tesseract_with_conf(self, gray_img: np.ndarray) -> Tuple[str, float]:
+    def _run_tesseract_with_conf(self, gray_img: Any) -> Tuple[str, float]:
         config = "--oem 3 --psm 6"
-        data = pytesseract.image_to_data(
-            gray_img, lang=self.active_language, config=config, output_type=pytesseract.Output.DICT
+        pt = _get_pytesseract()
+        data = pt.image_to_data(
+            gray_img, lang=self.active_language, config=config, output_type=pt.Output.DICT
         )
         words = []
         confs = []

@@ -32,7 +32,7 @@ def generate_report(prop_id):
     prop_dict = prop.to_dict()
     ev_dict = ev.to_dict()
     try:
-        from ml.predict import _reliability_indicator, _load_metrics
+        from ml.lightweight import compute_reliability_lightweight as _reliability_indicator, _load_metrics
         metrics = _load_metrics()
         if metrics:
             ev_dict["total_dataset_records"] = metrics.get("total_records_in_file", 1050)
@@ -151,7 +151,7 @@ def generate_report(prop_id):
         return jsonify({"error": f"Report generation failed: {str(e)}"}), 500
     finally:
         try:
-            from ml.predict import release_os_memory
+            from ml.lightweight import release_os_memory
             release_os_memory()
         except Exception:
             pass

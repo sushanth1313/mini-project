@@ -426,48 +426,60 @@ def _fetch_locality_dataset_comparables(
       3. Same taluk fallback (only when nearby < 3; explicitly labelled)
     """
     try:
-        from ml.predict import _load_train_df, _normalize_locality_name
-        from ml.preprocess import canonicalize_categorical
+        from gis.geo_utils import normalize_locality
+        from ml.lightweight import canonicalize_basic, load_dataset_comparables_rows
 
-        df = _load_train_df()
-        if df is None or df.empty:
+        rows = load_dataset_comparables_rows()
+        if not rows:
             return [], "NONE"
 
-        canon_taluk = canonicalize_categorical("taluk", taluk)
-        canon_lt = canonicalize_categorical("land_type", land_type)
-        loc_norm = _normalize_locality_name(locality)
+        canon_taluk = canonicalize_basic("taluk", taluk)
+        canon_lt = canonicalize_basic("land_type", land_type)
+        loc_norm = normalize_locality(locality)
 
-        same_lt_df = df[df["land_type"].astype(str).str.strip() == canon_lt]
-        if same_lt_df.empty:
+        same_lt_rows = [
+            r for r in rows
+            if canonicalize_basic("land_type", r.get("land_type")) == canon_lt
+            or str(r.get("land_type") or "").strip() == canon_lt
+        ]
+        if not same_lt_rows:
             return [], "NO_SAME_TYPE_DATA"
 
         if target_area_sqft and target_area_sqft > 0:
-            compat_df = same_lt_df[
-                same_lt_df["land_area_sqft"].apply(
-                    lambda a: _is_area_compatible(float(a) if _pd_valid(a) else None, target_area_sqft, canon_lt)
+            compat_rows = [
+                r for r in same_lt_rows
+                if _is_area_compatible(
+                    float(r.get("land_area_sqft")) if _pd_valid(r.get("land_area_sqft")) else None,
+                    target_area_sqft,
+                    canon_lt,
                 )
             ]
-            if not compat_df.empty:
-                same_lt_df = compat_df
+            if compat_rows:
+                same_lt_rows = compat_rows
 
-        loc_series = same_lt_df["village_or_locality"].astype(str).map(_normalize_locality_name)
-        exact = same_lt_df[loc_series == loc_norm] if loc_norm else same_lt_df.iloc[0:0]
+        exact_rows = [
+            r for r in same_lt_rows
+            if loc_norm and normalize_locality(str(r.get("village_or_locality") or "")) == loc_norm
+        ]
 
-        if exact.empty and loc_norm:
-            taluk_df = same_lt_df[same_lt_df["taluk"].astype(str).str.strip() == canon_taluk]
-            pool = taluk_df if not taluk_df.empty else same_lt_df
+        if not exact_rows and loc_norm:
+            taluk_rows = [r for r in same_lt_rows if str(r.get("taluk") or "").strip() == canon_taluk]
+            pool = taluk_rows if taluk_rows else same_lt_rows
             pool_norms = {
-                n: orig for orig, n in zip(
-                    pool["village_or_locality"].astype(str),
-                    pool["village_or_locality"].astype(str).map(_normalize_locality_name),
-                ) if n
+                n: str(r.get("village_or_locality") or "")
+                for r in pool
+                for n in (normalize_locality(str(r.get("village_or_locality") or "")),)
+                if n
             }
             matches = difflib.get_close_matches(loc_norm, list(pool_norms.keys()), n=1, cutoff=0.78)
             if matches:
-                exact = pool[pool["village_or_locality"].astype(str).map(_normalize_locality_name) == matches[0]]
+                exact_rows = [
+                    r for r in pool
+                    if normalize_locality(str(r.get("village_or_locality") or "")) == matches[0]
+                ]
 
         collected = []
-        for _, row in exact.iterrows():
+        for row in exact_rows:
             c = _row_to_comparable(row, canon_lt, locality, "EXACT_LOCALITY", dist_km=0.0)
             if c:
                 collected.append(c)
@@ -478,7 +490,7 @@ def _fetch_locality_dataset_comparables(
         # Tier 2: Nearby localities within 8 km Haversine of confirmed coordinates
         if len(collected) < MIN_COMPARABLES and lat is not None and lon is not None:
             nearby_rows = []
-            for _, row in same_lt_df.iterrows():
+            for row in same_lt_rows:
                 r_lat, r_lon = row.get("latitude"), row.get("longitude")
                 if not (_pd_valid(r_lat) and _pd_valid(r_lon)):
                     continue
@@ -498,8 +510,8 @@ def _fetch_locality_dataset_comparables(
 
         # Tier 3: Same taluk fallback ONLY if exact + nearby < 3 (never district-wide mix)
         if len(collected) < MIN_COMPARABLES:
-            taluk_only = same_lt_df[same_lt_df["taluk"].astype(str).str.strip() == canon_taluk]
-            for _, row in taluk_only.head(8).iterrows():
+            taluk_only = [r for r in same_lt_rows if str(r.get("taluk") or "").strip() == canon_taluk][:8]
+            for row in taluk_only:
                 c = _row_to_comparable(row, canon_lt, locality, f"SAME_TALUK ({canon_taluk})")
                 if c:
                     collected.append(c)

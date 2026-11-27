@@ -207,14 +207,15 @@ def _general_locality_variants(name: str) -> list[str]:
 
     # Check training dataset for closest known spelling (e.g. 'sathgall' -> 'Sathgalli')
     try:
-        from ml.predict import _load_train_df
-        df = _load_train_df()
-        if not df.empty:
+        from ml.lightweight import load_dataset_comparables_rows
+        rows = load_dataset_comparables_rows()
+        if rows:
             norms = {}
-            for orig in df["village_or_locality"].dropna().astype(str):
+            for r in rows:
+                orig = str(r.get("village_or_locality") or "").strip()
                 n = normalize_locality(orig)
-                if n and n not in norms:
-                    norms[n] = orig.strip()
+                if orig and n and n not in norms:
+                    norms[n] = orig
             matches = difflib.get_close_matches(normalize_locality(base), list(norms.keys()), n=1, cutoff=0.76)
             if matches:
                 _add(norms[matches[0]])

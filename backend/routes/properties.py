@@ -154,7 +154,7 @@ def get_property(prop_id):
     if evals:
         ev0 = evals[0]
         try:
-            from ml.predict import _reliability_indicator, _load_metrics
+            from ml.lightweight import compute_reliability_lightweight as _reliability_indicator, _load_metrics
             metrics = _load_metrics()
             if metrics:
                 ho_m = metrics.get("holdout_metrics") or {}

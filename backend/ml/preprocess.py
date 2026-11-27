@@ -13,10 +13,6 @@ Features used:
 """
 import numpy as np
 import pandas as pd
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
 
 CATEGORICAL_FEATURES = [
     "taluk",
@@ -234,6 +230,11 @@ def derive_region_3class(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_preprocessor():
     """Build sklearn ColumnTransformer for the full feature set."""
+    from sklearn.pipeline import Pipeline
+    from sklearn.compose import ColumnTransformer
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
+    from sklearn.impute import SimpleImputer
+
     numerical_pipeline = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler()),

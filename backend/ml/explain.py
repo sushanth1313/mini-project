@@ -4,6 +4,7 @@ Provides:
   - explain_prediction(input_df): Top positive/negative factors influencing a specific valuation.
   - get_feature_names(preprocessor, X): All feature names after preprocessing.
 """
+import copy
 import os
 import json
 import logging
@@ -34,12 +35,51 @@ def get_feature_names_from_preprocessor(preprocessor, X_cols=None) -> list:
         return []
 
 
-def _get_explainer(pipeline):
-    """Instantiate TreeExplainer on demand without retaining a permanent C++ tree copy in RAM."""
-    mdl = pipeline.named_steps["model"]
-    base_mdl = mdl.regressor_ if hasattr(mdl, "regressor_") else mdl
+def _compute_tree_shap(base_mdl, X_trans):
+    """
+    Compute exact TreeSHAP values and expected value for tree ensembles.
+    Evaluates large forests (e.g., 400-tree ExtraTrees) in 50-tree chunks and
+    averages linearly so C++/NumPy TreeEnsemble peak stays ~50 MB lower while
+    producing mathematically identical SHAP contributions.
+    """
     import shap
-    return shap.TreeExplainer(base_mdl)
+    from ml.lightweight import release_os_memory
+
+    estimators = getattr(base_mdl, "estimators_", None)
+    if estimators and len(estimators) > 50:
+        n_total = len(estimators)
+        sv_sum = None
+        ev_sum = 0.0
+        for i in range(0, n_total, 50):
+            chunk = estimators[i:i + 50]
+            sub = copy.copy(base_mdl)
+            sub.estimators_ = chunk
+            sub.n_estimators = len(chunk)
+            expl = shap.TreeExplainer(sub)
+            sv = np.asarray(expl.shap_values(X_trans)[0], dtype=float) * len(chunk)
+            ev = expl.expected_value
+            if isinstance(ev, (list, np.ndarray)):
+                ev_scalar = float(np.asarray(ev).ravel()[0])
+            else:
+                ev_scalar = float(ev)
+            sv_sum = sv if sv_sum is None else (sv_sum + sv)
+            ev_sum += ev_scalar * len(chunk)
+            del expl, sub, sv
+            release_os_memory()
+        return sv_sum / n_total, ev_sum / n_total
+
+    expl = shap.TreeExplainer(base_mdl)
+    try:
+        sv = np.asarray(expl.shap_values(X_trans)[0], dtype=float)
+        ev = expl.expected_value
+        if isinstance(ev, (list, np.ndarray)):
+            ev_scalar = float(np.asarray(ev).ravel()[0])
+        else:
+            ev_scalar = float(ev)
+        return sv, ev_scalar
+    finally:
+        del expl
+        release_os_memory()
 
 
 def explain_prediction(pipeline, input_df: pd.DataFrame, top_k: int = 6) -> dict:
@@ -54,23 +94,17 @@ def explain_prediction(pipeline, input_df: pd.DataFrame, top_k: int = 6) -> dict
         'all_top_factors': [{'feature': name, 'impact': inr, 'direction': 'increases_price'/'decreases_price'}, ...]
       }
     """
-    explainer = None
     X_trans = None
     shap_vals = None
     try:
-        explainer = _get_explainer(pipeline)
         pre = pipeline.named_steps["preprocessor"]
         mdl = pipeline.named_steps["model"]
+        base_mdl = mdl.regressor_ if hasattr(mdl, "regressor_") else mdl
 
         X_trans = pre.transform(input_df)
         feature_names = get_feature_names_from_preprocessor(pre, list(input_df.columns))
 
-        shap_vals = np.asarray(explainer.shap_values(X_trans)[0], dtype=float)
-        base_val = explainer.expected_value
-        if isinstance(base_val, (list, np.ndarray)):
-            base_val = float(base_val[0])
-        else:
-            base_val = float(base_val)
+        shap_vals, base_val = _compute_tree_shap(base_mdl, X_trans)
 
         pred_val = float(mdl.predict(X_trans)[0])
         is_log_target = hasattr(mdl, "regressor_")
@@ -113,9 +147,9 @@ def explain_prediction(pipeline, input_df: pd.DataFrame, top_k: int = 6) -> dict
         log.warning(f"explain_prediction failed: {e}")
         return {"shap_available": False, "error": str(e)}
     finally:
-        del explainer, X_trans, shap_vals
+        del X_trans, shap_vals
         try:
-            from ml.predict import release_os_memory
+            from ml.lightweight import release_os_memory
             release_os_memory()
         except Exception:
             pass

@@ -2,7 +2,7 @@
 Model metrics and info routes.
 """
 from flask import Blueprint, jsonify
-from ml.predict import get_model_metrics
+from ml.lightweight import get_model_metrics
 
 model_bp = Blueprint("model", __name__, url_prefix="/api/model")
 

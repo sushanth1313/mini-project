@@ -7,7 +7,6 @@ Changes in v3:
   - holdout metrics used for validation_mae/r2 (not GroupKFold)
   - reload_model() correctly resets both pipeline and metrics cache
 """
-import ctypes
 import gc
 import os
 import sys
@@ -16,26 +15,20 @@ import logging
 import threading
 import numpy as np
 import pandas as pd
-import joblib
+
+from ml.lightweight import (
+    MODEL_DIR,
+    MODEL_PATH,
+    METRICS_PATH,
+    release_os_memory,
+    _load_metrics,
+    get_model_metrics,
+    invalidate_metrics_cache,
+)
 
 log = logging.getLogger(__name__)
 
-
-def release_os_memory() -> None:
-    """Reclaim Python objects and ask glibc (Linux) to trim freed heap arenas."""
-    gc.collect()
-    if sys.platform.startswith("linux"):
-        try:
-            ctypes.CDLL("libc.so.6").malloc_trim(0)
-        except Exception:
-            pass
-
-MODEL_DIR    = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH   = os.path.join(MODEL_DIR, "model_pipeline.joblib")
-METRICS_PATH = os.path.join(MODEL_DIR, "model_metrics.json")
-
 _pipeline   = None
-_metrics    = None
 _train_df   = None   # lightweight copy for reliability lookups
 _TRAIN_DF_LOCK = threading.Lock()
 
@@ -48,20 +41,11 @@ def _load_pipeline():
                 f"Model not found at {MODEL_PATH}. "
                 "Run: python backend/ml/train.py --dataset <path_to_dataset>"
             )
+        import joblib
         _pipeline = joblib.load(MODEL_PATH)
         release_os_memory()
         log.info("ML pipeline loaded.")
     return _pipeline
-
-
-def _load_metrics():
-    global _metrics
-    if _metrics is None:
-        if not os.path.exists(METRICS_PATH):
-            return {}
-        with open(METRICS_PATH) as f:
-            _metrics = json.load(f)
-    return _metrics
 
 
 def _load_train_df():
@@ -501,6 +485,10 @@ def predict_price_per_sqft(input_df, input_data: dict = None, explain: bool = Fa
 
     # Individual prediction explanation if requested
     if explain:
+        if os.getenv("ML_ISOLATED_WORKER") == "1":
+            global _train_df
+            _train_df = None
+            release_os_memory()
         try:
             from ml.explain import explain_prediction
             result["explanation"] = explain_prediction(pipeline, input_df)
@@ -511,22 +499,12 @@ def predict_price_per_sqft(input_df, input_data: dict = None, explain: bool = Fa
     return result
 
 
-def get_model_metrics() -> dict:
-    """Return model metrics for the /api/model/metrics endpoint."""
-    try:
-        metrics     = _load_metrics()
-        model_ready = os.path.exists(MODEL_PATH)
-        return {"model_ready": model_ready, **metrics}
-    except Exception as e:
-        return {"model_ready": False, "error": str(e)}
-
-
 def reload_model():
     """Force reload of model and metrics (called after retraining via API)."""
-    global _pipeline, _metrics, _train_df
+    global _pipeline, _train_df
     _pipeline = None
-    _metrics  = None
     _train_df = None
+    invalidate_metrics_cache()
     _load_pipeline()
     _load_metrics()
     log.info("Model and metrics cache refreshed.")

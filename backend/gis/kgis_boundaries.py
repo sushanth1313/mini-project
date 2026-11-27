@@ -261,12 +261,20 @@ def _get_layers() -> Dict[str, List[Dict[str, Any]]]:
         if _LOADED_LAYERS is None:
             _LOADED_LAYERS = {
                 "taluks": _load_layer("mysuru_taluks.geojson"),
-                "hoblis": _load_layer("mysuru_hoblis.geojson"),
-                "villages": _load_layer("mysuru_villages.geojson"),
-                "towns": _load_layer("mysuru_towns.geojson"),
-                "wards": _load_layer("mysuru_wards.geojson"),
             }
             gc.collect()
+            _LOADED_LAYERS["hoblis"] = _load_layer("mysuru_hoblis.geojson")
+            gc.collect()
+            _LOADED_LAYERS["villages"] = _load_layer("mysuru_villages.geojson")
+            gc.collect()
+            _LOADED_LAYERS["towns"] = _load_layer("mysuru_towns.geojson")
+            gc.collect()
+            _LOADED_LAYERS["wards"] = _load_layer("mysuru_wards.geojson")
+            try:
+                from ml.lightweight import release_os_memory
+                release_os_memory()
+            except Exception:
+                gc.collect()
             log.info(
                 "Loaded KGIS Mysuru boundary layers: taluks=%d, hoblis=%d, villages=%d, towns=%d, wards=%d",
                 len(_LOADED_LAYERS["taluks"]),

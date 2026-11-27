@@ -15,7 +15,6 @@ from modules.land_document_analyzer.backend.services.ec_verification_service imp
 from modules.land_document_analyzer.backend.services.extraction_service import ExtractionService
 from modules.land_document_analyzer.backend.services.litigation_service import LitigationService
 from modules.land_document_analyzer.backend.services.ocr_service import OCRService
-from modules.land_document_analyzer.backend.services.report_generation_service import ReportGenerationService
 from modules.land_document_analyzer.backend.services.risk_engine import RiskEngine
 
 
@@ -34,7 +33,16 @@ class DueDiligencePipeline:
         self.approval_service = ApprovalVerificationService()
         self.litigation_service = LitigationService()
         self.risk_engine = RiskEngine()
-        self.report_service = ReportGenerationService()
+        self._report_service = None
+
+    @property
+    def report_service(self):
+        if self._report_service is None:
+            from modules.land_document_analyzer.backend.services.report_generation_service import (
+                ReportGenerationService,
+            )
+            self._report_service = ReportGenerationService()
+        return self._report_service
 
     def run_analysis(
         self,
