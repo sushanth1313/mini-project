@@ -11,13 +11,17 @@ from modules.land_document_analyzer.backend.models.schemas import DOCUMENT_TYPES
 from modules.land_document_analyzer.backend.pipeline import DueDiligencePipeline
 from modules.land_document_analyzer.backend.services.document_upload_service import DocumentUploadError
 from modules.land_document_analyzer.backend.services.ocr_service import CV2_AVAILABLE, PYMUPDF_AVAILABLE
-from modules.land_document_analyzer.backend.utils.security import get_safe_logger, verify_auth_header
+from modules.land_document_analyzer.backend.utils.security import get_safe_logger, sanitize_for_json, verify_auth_header
 
 logger = get_safe_logger(__name__)
 
 # Modular Flask Blueprint for drop-in registration in the main Smart Land Valuation Flask app
 document_analysis_bp = Blueprint("document_analysis", __name__, url_prefix="/api/document-analysis")
 _pipeline = DueDiligencePipeline()
+
+
+def _json_response(payload: Any, status_code: int = 200):
+    return jsonify(sanitize_for_json(payload)), status_code
 
 
 def _extract_field_value(fields: Dict[str, Any], *keys: str) -> Optional[str]:
@@ -198,7 +202,7 @@ def list_analyses():
             "total_findings": risk.get("total_findings") or len(rec.get("risk_findings") or []),
             "has_pdf": bool(rec.get("report_pdf_path")),
         })
-    return jsonify({"count": len(summaries), "analyses": summaries}), 200
+    return _json_response({"count": len(summaries), "analyses": summaries}, 200)
 
 
 @document_analysis_bp.route("/by-property/<int:property_id>", methods=["GET"])
@@ -234,12 +238,12 @@ def get_analysis_by_property(property_id: int):
     ]
     matches.sort(key=lambda r: str(r.get("generated_at", "")), reverse=True)
     sqlite_docs_count = Document.query.filter_by(property_id=property_id).count()
-    return jsonify({
+    return _json_response({
         "property_info": prefill,
         "sqlite_documents_count": sqlite_docs_count,
         "latest_analysis": matches[0] if matches else None,
         "analysis_count": len(matches),
-    }), 200
+    }, 200)
 
 
 @document_analysis_bp.route("/health", methods=["GET"])
@@ -321,7 +325,7 @@ def analyze_documents():
             generate_pdf=True,
         )
         result["sqlite_sync"] = _sync_analysis_to_sqlite(result)
-        return jsonify(result), 200
+        return _json_response(result, 200)
     except DocumentUploadError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
@@ -335,7 +339,7 @@ def get_analysis(analysis_id: str):
     record = _pipeline.get_analysis(analysis_id)
     if not record:
         return jsonify({"error": "Analysis not found."}), 404
-    return jsonify(record), 200
+    return _json_response(record, 200)
 
 
 @document_analysis_bp.route("/<analysis_id>/documents/<document_id>/classification", methods=["PATCH"])
@@ -354,7 +358,7 @@ def reclassify_document(analysis_id: str, document_id: str):
     if not updated:
         return jsonify({"error": "Analysis or document not found."}), 404
     updated["sqlite_sync"] = _sync_analysis_to_sqlite(updated)
-    return jsonify(updated), 200
+    return _json_response(updated, 200)
 
 
 @document_analysis_bp.route("/<analysis_id>/documents/<document_id>/corrections", methods=["PATCH"])
@@ -373,7 +377,7 @@ def correct_document_fields(analysis_id: str, document_id: str):
     if not updated:
         return jsonify({"error": "Analysis or document not found."}), 404
     updated["sqlite_sync"] = _sync_analysis_to_sqlite(updated)
-    return jsonify(updated), 200
+    return _json_response(updated, 200)
 
 
 @document_analysis_bp.route("/<analysis_id>/documents/<document_id>", methods=["DELETE"])
@@ -383,7 +387,7 @@ def delete_document(analysis_id: str, document_id: str):
     if not updated:
         return jsonify({"error": "Analysis or document not found."}), 404
     updated["sqlite_sync"] = _sync_analysis_to_sqlite(updated)
-    return jsonify(updated), 200
+    return _json_response(updated, 200)
 
 
 @document_analysis_bp.route("/<analysis_id>/report/pdf", methods=["GET"])

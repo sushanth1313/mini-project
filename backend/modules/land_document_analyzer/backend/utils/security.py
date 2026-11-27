@@ -1,8 +1,14 @@
 """Security utilities: PII-safe logging, filename sanitization, RBAC check, and AI consent guard."""
+from datetime import date, datetime
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
+
+try:
+    from bson import ObjectId as BsonObjectId
+except ImportError:
+    BsonObjectId = None
 
 from modules.land_document_analyzer.backend.config.settings import Settings
 
@@ -93,6 +99,29 @@ def verify_auth_header(headers: Dict[str, str], required_roles: Optional[Tuple[s
     if required_roles and role not in tuple(r.lower() for r in required_roles):
         return False, role, f"Role '{role}' is not authorized for this endpoint."
     return True, role, "Authorized"
+
+
+def sanitize_for_json(value: Any) -> Any:
+    """
+    Recursively convert non-JSON-native BSON/Python types (e.g., nested ObjectId,
+    datetime, Path) into JSON-serializable values without mutating stored records.
+    """
+    if BsonObjectId is not None and isinstance(value, BsonObjectId):
+        return str(value)
+    if type(value).__name__ == "ObjectId" and hasattr(value, "binary"):
+        return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {
+            (k if isinstance(k, str) else str(k)): sanitize_for_json(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [sanitize_for_json(item) for item in value]
+    return value
 
 
 def check_external_ai_consent(consent_flag: bool, provider: str) -> Tuple[bool, str]:

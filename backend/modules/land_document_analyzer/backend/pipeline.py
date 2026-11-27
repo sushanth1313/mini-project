@@ -119,7 +119,7 @@ class DueDiligencePipeline:
                         "expires_at": self.db.retention_expiry(),
                     }
                 )
-                self.db.collection("documents").insert_one(base_doc)
+                self.db.collection("documents").insert_one(dict(base_doc))
                 processed_docs.append(base_doc)
             else:
                 for seg_idx, seg in enumerate(segments):
@@ -157,7 +157,7 @@ class DueDiligencePipeline:
                             "expires_at": self.db.retention_expiry(),
                         }
                     )
-                    self.db.collection("documents").insert_one(seg_doc)
+                    self.db.collection("documents").insert_one(dict(seg_doc))
                     processed_docs.append(seg_doc)
 
         result = self._recompute_analysis(
@@ -169,7 +169,7 @@ class DueDiligencePipeline:
             generate_pdf=generate_pdf,
             uploaded_file_count=uploaded_files_count,
         )
-        self.db.collection("analyses").insert_one(result)
+        self.db.collection("analyses").insert_one(dict(result))
         return result
 
     def _recompute_analysis(
@@ -367,7 +367,10 @@ class DueDiligencePipeline:
             ai_provider_name=target_doc.get("extraction", {}).get("ai_provider_used"),
             external_ai_consent=False,
         )
-        self.db.collection("documents").update_one({"document_id": document_id}, {"$set": target_doc})
+        self.db.collection("documents").update_one(
+            {"document_id": document_id},
+            {"$set": {k: v for k, v in target_doc.items() if k != "_id"}},
+        )
 
         recomputed = self._recompute_analysis(
             analysis_id=analysis_id,
@@ -393,7 +396,10 @@ class DueDiligencePipeline:
             if doc.get("document_id") == document_id:
                 for field_name, val in corrections.items():
                     self.extraction_service.apply_manual_correction(doc["extraction"], field_name, val, corrected_by)
-                self.db.collection("documents").update_one({"document_id": document_id}, {"$set": doc})
+                self.db.collection("documents").update_one(
+                    {"document_id": document_id},
+                    {"$set": {k: v for k, v in doc.items() if k != "_id"}},
+                )
                 updated = True
                 break
 
