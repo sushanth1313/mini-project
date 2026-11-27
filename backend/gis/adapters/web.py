@@ -1,7 +1,11 @@
 import logging
-from duckduckgo_search import DDGS
-from .base import BaseAdapter
 import re
+from .base import BaseAdapter
+
+try:
+    from duckduckgo_search import DDGS
+except ImportError:
+    DDGS = None
 
 log = logging.getLogger(__name__)
 
@@ -11,6 +15,8 @@ class PropertyWebAdapter(BaseAdapter):
         self.allowed_domains = ["housing.com", "magicbricks.com", "realestateindia.com", "99acres.com"]
 
     def check_status(self) -> dict:
+        if DDGS is None:
+            return {"status": "UNAVAILABLE", "message": "Optional web-search package not installed"}
         try:
             with DDGS() as ddgs:
                 list(ddgs.text("test", max_results=1))
@@ -19,8 +25,8 @@ class PropertyWebAdapter(BaseAdapter):
             return {"status": "UNAVAILABLE", "message": str(e)}
 
     def fetch_facilities(self, lat: float, lon: float, locality_name: str, district: str) -> dict:
-        # If we don't have locality, we can't do a good web search
-        if not locality_name:
+        # If we don't have locality or optional DDGS client, skip cleanly
+        if not locality_name or DDGS is None:
             return None
             
         results = {
