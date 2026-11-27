@@ -51,9 +51,28 @@ USER_CONF_YES = "User Reported — Available"
 USER_CONF_NO = "User Reported — Not Available"
 USER_CONF_UNANSWERED = "Not Confirmed"
 
-_UTILITY_CACHE: Dict[Tuple[float, float], Dict[str, Any]] = {}
+_UTILITY_CACHE: Dict[Any, Dict[str, Any]] = {}
 _UTILITY_CACHE_LOCK = threading.Lock()
+_UTILITY_CACHE_MAX = 24
 _CACHE_TTL_SECONDS = 3600  # 1 hour
+
+
+def _set_utility_cache(key: Any, value: Dict[str, Any]) -> None:
+    with _UTILITY_CACHE_LOCK:
+        while len(_UTILITY_CACHE) >= _UTILITY_CACHE_MAX and key not in _UTILITY_CACHE:
+            _UTILITY_CACHE.pop(next(iter(_UTILITY_CACHE)))
+        _UTILITY_CACHE[key] = value
+
+
+def prefetch_utility_network(lat: float, lon: float, timeout: int = 8) -> None:
+    """Populate utility Overpass/Nominatim caches concurrently prior to scoring."""
+    try:
+        lat_f, lon_f = float(lat), float(lon)
+        raw = _fetch_utility_overpass(lat_f, lon_f, timeout=timeout)
+        if not raw.get("ok"):
+            _fetch_utility_nominatim_fallback(lat_f, lon_f)
+    except Exception as exc:
+        log.debug("Utility network prefetch skipped: %s", exc)
 
 _SOURCE_LABEL = "OpenStreetMap (Overpass API) + GIS Facility Layer"
 
@@ -110,7 +129,8 @@ def _fetch_utility_overpass(lat: float, lon: float, timeout: int = 10) -> Dict[s
     cache_key = (round(float(lat), 3), round(float(lon), 3))
     with _UTILITY_CACHE_LOCK:
         cached = _UTILITY_CACHE.get(cache_key)
-        if cached and (time.time() - cached.get("_ts", 0)) < _CACHE_TTL_SECONDS:
+        ttl = _CACHE_TTL_SECONDS if (cached and cached.get("ok")) else 90
+        if cached and (time.time() - cached.get("_ts", 0)) < ttl:
             return cached
 
     if is_overpass_circuit_open():
@@ -185,8 +205,7 @@ def _fetch_utility_overpass(lat: float, lon: float, timeout: int = 10) -> Dict[s
                         "retrieved_at": datetime.now(timezone.utc).isoformat(),
                         "_ts": time.time(),
                     }
-                    with _UTILITY_CACHE_LOCK:
-                        _UTILITY_CACHE[cache_key] = result
+                    _set_utility_cache(cache_key, result)
                     return result
                 except Exception as exc:
                     last_err = str(exc)
@@ -195,13 +214,15 @@ def _fetch_utility_overpass(lat: float, lon: float, timeout: int = 10) -> Dict[s
         pool.shutdown(wait=False, cancel_futures=True)
 
     trip_overpass_circuit(90)
-    return {
+    err_res = {
         "ok": False,
         "elements": [],
         "error": last_err or "Overpass unavailable",
         "retrieved_at": datetime.now(timezone.utc).isoformat(),
         "_ts": time.time(),
     }
+    _set_utility_cache(cache_key, err_res)
+    return err_res
 
 
 def _fetch_utility_nominatim_fallback(lat: float, lon: float) -> Dict[str, Any]:
@@ -298,8 +319,7 @@ def _fetch_utility_nominatim_fallback(lat: float, lon: float) -> Dict[str, Any]:
         "elec_els": elec_els,
         "_ts": time.time(),
     }
-    with _UTILITY_CACHE_LOCK:
-        _UTILITY_CACHE[cache_key] = out
+    _set_utility_cache(cache_key, out)
     return out
 
 

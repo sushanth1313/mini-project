@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 
 MIN_COMPARABLES = 3
 _LISTING_CACHE: dict = {}
+_LISTING_CACHE_MAX = 24
 _CACHE_TTL_SECONDS = 3600  # 1 hour
 
 _UA = "SmartLandEvaluation/1.0 (VTU Academic Research Project)"
@@ -691,5 +692,7 @@ def fetch_market_listings(
         ),
     }
 
+    while len(_LISTING_CACHE) >= _LISTING_CACHE_MAX and ck not in _LISTING_CACHE:
+        _LISTING_CACHE.pop(next(iter(_LISTING_CACHE)))
     _LISTING_CACHE[ck] = result
     return result

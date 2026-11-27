@@ -35,16 +35,11 @@ def get_feature_names_from_preprocessor(preprocessor, X_cols=None) -> list:
 
 
 def _get_explainer(pipeline):
-    """Lazily initialize TreeExplainer (unwrapping TransformedTargetRegressor when present)."""
-    global _explainer, _cached_pipeline
+    """Instantiate TreeExplainer on demand without retaining a permanent C++ tree copy in RAM."""
     mdl = pipeline.named_steps["model"]
     base_mdl = mdl.regressor_ if hasattr(mdl, "regressor_") else mdl
-    if _explainer is None or _cached_pipeline is not base_mdl:
-        import shap
-        _explainer = shap.TreeExplainer(base_mdl)
-        _cached_pipeline = base_mdl
-        log.info("SHAP TreeExplainer initialized.")
-    return _explainer
+    import shap
+    return shap.TreeExplainer(base_mdl)
 
 
 def explain_prediction(pipeline, input_df: pd.DataFrame, top_k: int = 6) -> dict:
@@ -59,6 +54,9 @@ def explain_prediction(pipeline, input_df: pd.DataFrame, top_k: int = 6) -> dict
         'all_top_factors': [{'feature': name, 'impact': inr, 'direction': 'increases_price'/'decreases_price'}, ...]
       }
     """
+    explainer = None
+    X_trans = None
+    shap_vals = None
     try:
         explainer = _get_explainer(pipeline)
         pre = pipeline.named_steps["preprocessor"]
@@ -103,7 +101,6 @@ def explain_prediction(pipeline, input_df: pd.DataFrame, top_k: int = 6) -> dict
         pos = [f for f in impacts if f["direction"] == "increases_price"][:top_k]
         neg = [f for f in impacts if f["direction"] == "decreases_price"][:top_k]
 
-        del X_trans
         return {
             "base_price_per_sqft": round(base_price, 2),
             "predicted_price_per_sqft": round(pred_val, 2),
@@ -115,4 +112,11 @@ def explain_prediction(pipeline, input_df: pd.DataFrame, top_k: int = 6) -> dict
     except Exception as e:
         log.warning(f"explain_prediction failed: {e}")
         return {"shap_available": False, "error": str(e)}
+    finally:
+        del explainer, X_trans, shap_vals
+        try:
+            from ml.predict import release_os_memory
+            release_os_memory()
+        except Exception:
+            pass
 

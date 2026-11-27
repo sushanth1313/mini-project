@@ -167,7 +167,7 @@ def _ensure_schema_migrations():
             db.session.rollback()
             log.warning(f"Schema check skipped for {table}.{col}: {e}")
 
-    # Widen VARCHAR columns on PostgreSQL where historical SQLite rows exceed old limits
+    # Widen VARCHAR columns on PostgreSQL only when inspector confirms length < 255
     if db.engine.dialect.name == "postgresql":
         for table, col in [
             ("properties", "coordinate_source"),
@@ -176,8 +176,11 @@ def _ensure_schema_migrations():
             ("data_sources", "confidence"),
         ]:
             try:
-                db.session.execute(text(f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE VARCHAR(255)'))
-                db.session.commit()
+                cols_meta = inspector.get_columns(table)
+                cur_len = next((getattr(c.get("type"), "length", None) for c in cols_meta if c["name"] == col), None)
+                if cur_len is not None and cur_len < 255:
+                    db.session.execute(text(f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE VARCHAR(255)'))
+                    db.session.commit()
             except Exception:
                 db.session.rollback()
 

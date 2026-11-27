@@ -461,39 +461,88 @@ def _run_evaluation_pipeline():
     lat = prop.latitude
     lon = prop.longitude
 
-    # ── Step 1: GIS Facility Analysis (runs before ML & Scoring) ──────────
+    # ── Step 1: Concurrent Network Phase (GIS Facilities + Utility Prefetch + Market Research) ─
     facilities_raw = {}
-    if lat and lon:
-        try:
-            overpass_url = current_app.config.get("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
-            overpass_timeout = min(int(current_app.config.get("OVERPASS_TIMEOUT", 12) or 12), 15)
-            facilities_raw = get_nearby_facilities(
-                lat, lon,
-                overpass_url,
-                overpass_timeout,
-                locality=prop.village_or_locality or "",
-                district=prop.district or ""
-            )
+    prefetched_market_data = None
+    asking = _safe_float(data.get("asking_price_inr"))
+    overpass_url = current_app.config.get("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
+    overpass_timeout = min(int(current_app.config.get("OVERPASS_TIMEOUT", 12) or 12), 10)
 
-            statuses = [v.get("status") for v in facilities_raw.values()]
-            any_data = any(v.get("nearest") is not None for v in facilities_raw.values())
-            any_error = any(s in ("SOURCE_UNAVAILABLE", "PARTIAL") for s in statuses)
-            if not any_data and all(s == "SOURCE_UNAVAILABLE" for s in statuses):
-                warnings.append(
-                    "GIS analysis (OpenStreetMap) is temporarily unavailable across all categories. "
-                    "Price evaluation is still available."
-                )
-            elif any_error:
-                failed_cats = [k for k, v in facilities_raw.items() if v.get("status") in ("SOURCE_UNAVAILABLE", "PARTIAL")]
-                warnings.append(
-                    f"GIS query partially completed; incomplete/unavailable categories: {', '.join(failed_cats)}."
-                )
-        except Exception as e:
-            log.error(f"GIS error: {e}", exc_info=True)
-            warnings.append(
-                "GIS analysis is temporarily unavailable. "
-                f"Price evaluation is still available. Error: {str(e)[:80]}"
-            )
+    def _run_market_fetch():
+        from market.listing_service import fetch_market_listings
+        return fetch_market_listings(
+            locality=canon_locality,
+            taluk=canon_taluk,
+            land_type=data.get("land_type", "Residential"),
+            listing_type=data.get("listing_type", "Resale"),
+            land_area_sqft=area,
+            lat=lat,
+            lon=lon,
+        )
+
+    def _run_gis_fetch():
+        return get_nearby_facilities(
+            lat, lon,
+            overpass_url,
+            overpass_timeout,
+            locality=prop.village_or_locality or "",
+            district=prop.district or "",
+        )
+
+    def _run_utility_prefetch():
+        from gis.utility_service import prefetch_utility_network
+        prefetch_utility_network(lat, lon, timeout=min(overpass_timeout, 8))
+
+    import concurrent.futures as _cf
+    _io_pool = _cf.ThreadPoolExecutor(max_workers=3, thread_name_prefix="eval_io")
+    try:
+        fut_gis = _io_pool.submit(_run_gis_fetch) if (lat and lon) else None
+        fut_util = _io_pool.submit(_run_utility_prefetch) if (lat and lon) else None
+        fut_mkt = _io_pool.submit(_run_market_fetch)
+        pending = [f for f in (fut_gis, fut_util, fut_mkt) if f is not None]
+        done, _ = _cf.wait(pending, timeout=24)
+
+        if fut_gis is not None:
+            if fut_gis in done:
+                try:
+                    facilities_raw = fut_gis.result() or {}
+                    statuses = [v.get("status") for v in facilities_raw.values()]
+                    any_data = any(v.get("nearest") is not None for v in facilities_raw.values())
+                    any_error = any(s in ("SOURCE_UNAVAILABLE", "PARTIAL") for s in statuses)
+                    if not any_data and all(s == "SOURCE_UNAVAILABLE" for s in statuses):
+                        warnings.append(
+                            "GIS analysis (OpenStreetMap) is temporarily unavailable across all categories. "
+                            "Price evaluation is still available."
+                        )
+                    elif any_error:
+                        failed_cats = [k for k, v in facilities_raw.items() if v.get("status") in ("SOURCE_UNAVAILABLE", "PARTIAL")]
+                        warnings.append(
+                            f"GIS query partially completed; incomplete/unavailable categories: {', '.join(failed_cats)}."
+                        )
+                except Exception as e:
+                    log.error(f"GIS error: {e}", exc_info=True)
+                    warnings.append(
+                        "GIS analysis is temporarily unavailable. "
+                        f"Price evaluation is still available. Error: {str(e)[:80]}"
+                    )
+            else:
+                warnings.append("GIS analysis timed out; price evaluation completed with available locality context.")
+
+        if fut_util is not None and fut_util in done:
+            try:
+                fut_util.result()
+            except Exception:
+                pass
+
+        if fut_mkt in done:
+            try:
+                prefetched_market_data = fut_mkt.result()
+            except Exception as exc:
+                log.warning(f"Concurrent market listing prefetch failed: {exc}")
+    finally:
+        _io_pool.shutdown(wait=False, cancel_futures=True)
+
+    if lat and lon:
 
         wb_data = facilities_raw.get("waterbody", {})
         wb_dist = wb_data.get("nearest_distance_km")
@@ -576,6 +625,7 @@ def _run_evaluation_pipeline():
         unified_data["nearest_hospital_km"] = facilities_raw["clinic"]["nearest_distance_km"]
 
     # ── Step 2: ML Price Prediction (uses real GIS features + canonical ML land_type) ─
+    release_os_memory()
     pred_result = None
     try:
         from services.classification_service import map_land_type_for_ml
@@ -831,16 +881,19 @@ def _run_evaluation_pipeline():
     market_data = {}
     asking = _safe_float(data.get("asking_price_inr"))
     try:
-        from market.listing_service import fetch_market_listings
-        market_data = fetch_market_listings(
-            locality=canon_locality,
-            taluk=canon_taluk,
-            land_type=data.get("land_type", "Residential"),
-            listing_type=data.get("listing_type", "Resale"),
-            land_area_sqft=area,
-            lat=lat,
-            lon=lon,
-        )
+        if prefetched_market_data is not None:
+            market_data = prefetched_market_data
+        else:
+            from market.listing_service import fetch_market_listings
+            market_data = fetch_market_listings(
+                locality=canon_locality,
+                taluk=canon_taluk,
+                land_type=data.get("land_type", "Residential"),
+                listing_type=data.get("listing_type", "Resale"),
+                land_area_sqft=area,
+                lat=lat,
+                lon=lon,
+            )
         if pred_result and market_data.get("market_benchmark", {}).get("market_benchmark_psf"):
             benchmark_psf = market_data["market_benchmark"]["market_benchmark_psf"]
             ml_psf = pred_result["predicted_price_per_sqft"]

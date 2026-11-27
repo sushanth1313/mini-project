@@ -5,7 +5,6 @@ import os
 import logging
 from flask import Blueprint, jsonify, send_file, current_app, request
 from models import db, Property, PropertyEvaluation, Report, FacilityRecord, Document, VerificationItem
-from reports.generator import generate_pdf_report
 from datetime import datetime
 
 log = logging.getLogger(__name__)
@@ -138,6 +137,7 @@ def generate_report(prop_id):
     output_path = os.path.join(reports_folder, filename)
 
     try:
+        from reports.generator import generate_pdf_report
         generate_pdf_report(
             property_data=prop_dict,
             evaluation=ev_dict,
@@ -149,6 +149,12 @@ def generate_report(prop_id):
     except Exception as e:
         log.error(f"Report generation failed: {e}", exc_info=True)
         return jsonify({"error": f"Report generation failed: {str(e)}"}), 500
+    finally:
+        try:
+            from ml.predict import release_os_memory
+            release_os_memory()
+        except Exception:
+            pass
 
     # Save report record
     file_size = os.path.getsize(output_path)

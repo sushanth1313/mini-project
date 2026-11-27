@@ -13,6 +13,7 @@ import os
 import sys
 import json
 import logging
+import threading
 import numpy as np
 import pandas as pd
 import joblib
@@ -36,6 +37,7 @@ METRICS_PATH = os.path.join(MODEL_DIR, "model_metrics.json")
 _pipeline   = None
 _metrics    = None
 _train_df   = None   # lightweight copy for reliability lookups
+_TRAIN_DF_LOCK = threading.Lock()
 
 
 def _load_pipeline():
@@ -70,39 +72,60 @@ def _load_train_df():
     global _train_df
     if _train_df is not None:
         return _train_df
-    metrics = _load_metrics()
-    dataset_path = metrics.get("dataset_path", "")
-    # Try a few common locations
-    candidates = [
-        dataset_path,
-        os.path.join(MODEL_DIR, "Mysuru_Land_Evaluation_1000_Master.xlsx"),
-        os.path.join(MODEL_DIR, "..", "..", "Mysuru_Land_Evaluation_1000_Master.xlsx"),
-    ]
-    for p in candidates:
-        if p and os.path.exists(p):
-            try:
-                from ml.preprocess import derive_region_3class, NUMERICAL_FEATURES, _haversine_vec
-                gis_ref_cols = [c for c in NUMERICAL_FEATURES if "nearest_" in c or "count_3km" in c or "waterbody" in c or "distance_to_" in c]
-                cols = list(dict.fromkeys([
-                    "taluk", "village_or_locality", "region_type",
-                    "land_type", "listing_type", "price_per_sqft", "land_area_sqft",
-                    "latitude", "longitude", *gis_ref_cols,
-                ]))
-                df_tmp = pd.read_excel(p, usecols=lambda c: c in cols)
-                if "latitude" in df_tmp.columns and "longitude" in df_tmp.columns:
-                    lat = pd.to_numeric(df_tmp["latitude"], errors="coerce")
-                    lon = pd.to_numeric(df_tmp["longitude"], errors="coerce")
-                    df_tmp["dist_mysuru_center_km"] = _haversine_vec(lat, lon, 12.3052, 76.6552)
-                _train_df = derive_region_3class(df_tmp)
-                del df_tmp
-                release_os_memory()
-                log.info(f"Training reference dataset loaded: {len(_train_df)} rows from {p}")
-                return _train_df
-            except Exception as e:
-                log.warning(f"Could not load training df from {p}: {e}")
-    log.warning("Could not load training dataset for reliability analysis.")
-    _train_df = pd.DataFrame()
-    return _train_df
+    with _TRAIN_DF_LOCK:
+        if _train_df is not None:
+            return _train_df
+        metrics = _load_metrics()
+        dataset_path = metrics.get("dataset_path", "")
+        # Try a few common locations
+        candidates = [
+            dataset_path,
+            os.path.join(MODEL_DIR, "Mysuru_Land_Evaluation_1000_Master.xlsx"),
+            os.path.join(MODEL_DIR, "..", "..", "Mysuru_Land_Evaluation_1000_Master.xlsx"),
+        ]
+        for p in candidates:
+            if p and os.path.exists(p):
+                try:
+                    from ml.preprocess import derive_region_3class, NUMERICAL_FEATURES, _haversine_vec
+                    gis_ref_cols = [c for c in NUMERICAL_FEATURES if "nearest_" in c or "count_3km" in c or "waterbody" in c or "distance_to_" in c]
+                    cols = list(dict.fromkeys([
+                        "taluk", "village_or_locality", "region_type",
+                        "land_type", "listing_type", "price_per_sqft", "land_area_sqft",
+                        "latitude", "longitude", *gis_ref_cols,
+                    ]))
+                    wanted = set(cols)
+                    import openpyxl
+                    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+                    try:
+                        ws = wb.active
+                        row_iter = ws.iter_rows(values_only=True)
+                        header = next(row_iter, None) or ()
+                        selected = [(idx, str(name)) for idx, name in enumerate(header) if name in wanted]
+                        col_data = {name: [] for _, name in selected}
+                        for r in row_iter:
+                            if not r or all(v is None for v in r):
+                                continue
+                            row_len = len(r)
+                            for idx, name in selected:
+                                col_data[name].append(r[idx] if idx < row_len else None)
+                        df_tmp = pd.DataFrame(col_data)
+                    finally:
+                        wb.close()
+                        del wb
+                    if "latitude" in df_tmp.columns and "longitude" in df_tmp.columns:
+                        lat = pd.to_numeric(df_tmp["latitude"], errors="coerce")
+                        lon = pd.to_numeric(df_tmp["longitude"], errors="coerce")
+                        df_tmp["dist_mysuru_center_km"] = _haversine_vec(lat, lon, 12.3052, 76.6552)
+                    _train_df = derive_region_3class(df_tmp)
+                    del df_tmp
+                    release_os_memory()
+                    log.info(f"Training reference dataset loaded: {len(_train_df)} rows from {p}")
+                    return _train_df
+                except Exception as e:
+                    log.warning(f"Could not load training df from {p}: {e}")
+        log.warning("Could not load training dataset for reliability analysis.")
+        _train_df = pd.DataFrame()
+        return _train_df
 
 
 def _normalize_locality_name(name: str) -> str:
